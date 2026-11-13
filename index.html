@@ -1,0 +1,248 @@
+<!DOCTYPE html>
+<html lang="ru">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ППК — программирование промышленных контроллеров</title>
+    <meta name="description" content="Интерактивный онлайн-плеер для прохождения тестов. Лёгкая подготовка к сессии.">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap"
+        rel="stylesheet">
+    
+    <!-- marked.js for markdown parsing -->
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+
+    <!-- KaTeX for math rendering -->
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.8/dist/katex.min.css">
+    <script src="https://cdn.jsdelivr.net/npm/katex@0.16.8/dist/katex.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/katex@0.16.8/dist/contrib/auto-render.min.js"></script>
+
+    <link rel="stylesheet" href="styles.css?v=campaign-medals">
+</head>
+
+<body>
+    <!-- Animated background -->
+    <div class="bg-gradient"></div>
+    <div class="bg-grid"></div>
+    <div class="bg-orbs">
+        <div class="orb orb-1"></div>
+        <div class="orb orb-2"></div>
+        <div class="orb orb-3"></div>
+    </div>
+
+    <div class="app-container">
+        <div class="app-toolbar">
+            <button type="button" class="range-button" id="btn-achievements" title="Достижения" aria-label="Достижения">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+                    <path d="M7 3h10v7a5 5 0 0 1-10 0zM7 5H3v2a4 4 0 0 0 4 4m10-6h4v2a4 4 0 0 1-4 4m-5 4v5m-5 1h10" />
+                </svg>
+            </button>
+            <button type="button" class="range-button" id="btn-menu" title="В меню" aria-label="В меню" hidden>
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+                    <path d="M3 11l9-8 9 8M6 9v12h12V9M10 21v-6h4v6" />
+                </svg>
+            </button>
+            <button type="button" class="range-button fullscreen-button" id="btn-fullscreen" title="Во весь экран" aria-label="Во весь экран" hidden>
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true" data-fullscreen-enter>
+                    <path d="M9 3H3v6m12-6h6v6M3 15v6h6m12-6v6h-6" />
+                </svg>
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true" data-fullscreen-exit hidden>
+                    <path d="M3 9h6V3m12 6h-6V3M3 15h6v6m12-6h-6v6" />
+                </svg>
+            </button>
+        </div>
+        <div id="fullscreen-status" class="fullscreen-status" role="status" hidden></div>
+        <button type="button" id="run-failure" class="run-failure" hidden>
+            Лимит ошибок исчерпан
+            <span>К результатам →</span>
+        </button>
+        <!-- ============ WELCOME SCREEN ============ -->
+        <section id="welcome-screen" class="screen active">
+            <div class="welcome-card">
+                <header class="welcome-titlebar">
+                    <h1 class="logo-text">TestMaster</h1>
+                </header>
+                <div class="welcome-layout">
+                    <div class="welcome-overview">
+                        <p class="welcome-subtitle" id="test-title-display">Загрузка теста...</p>
+                        <div class="test-meta" id="test-meta">
+                            <span class="meta-chip" id="meta-count">— вопросов</span>
+                            <button type="button" class="meta-chip" id="btn-question-order" data-mode="random">Случайный порядок</button>
+                        </div>
+                        <div class="difficulty-control">
+                            <span>Сложность</span>
+                            <details id="difficulty-menu" class="difficulty-menu">
+                                <summary id="difficulty-label" aria-label="Сложность: Мирная" aria-describedby="difficulty-hint">Мирная</summary>
+                                <div class="difficulty-options" role="group" aria-label="Уровни сложности">
+                                    <button type="button" data-difficulty="peaceful" aria-pressed="true">Мирная</button>
+                                    <button type="button" data-difficulty="easy" aria-pressed="false">Лёгкая</button>
+                                    <button type="button" data-difficulty="normal" aria-pressed="false">Средняя</button>
+                                    <button type="button" data-difficulty="hard" aria-pressed="false">Сложная</button>
+                                    <button type="button" data-difficulty="hardcore" aria-pressed="false">Хардкор</button>
+                                </div>
+                            </details>
+                        </div>
+                        <p id="difficulty-hint" class="difficulty-hint">Без досрочного завершения</p>
+                    </div>
+                    <div class="welcome-options">
+                        <!-- Question range buttons -->
+                        <div class="range-selector-container" id="range-selector-container" style="display: none;">
+                            <input type="hidden" id="range-select" value="all">
+                            <div id="range-buttons"></div>
+                            <div id="range-summary" aria-live="polite"></div>
+                        </div>
+
+                        <button class="btn-start" id="btn-start">
+                            <span>Начать тест</span>
+                            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"
+                                stroke-linecap="round" stroke-linejoin="round">
+                                <line x1="5" y1="12" x2="19" y2="12" />
+                                <polyline points="12 5 19 12 12 19" />
+                            </svg>
+                        </button>
+                        <button type="button" class="range-button" id="btn-resume" hidden>Продолжить попытку</button>
+
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- ============ TEST SCREEN ============ -->
+        <section id="test-screen" class="screen">
+            <div class="test-topbar">
+                <div class="progress-pill" id="progress-text">1 / 10</div>
+                <span class="hardcore-indicator" id="hardcore-indicator" hidden></span>
+                <div class="health-display">
+                    <progress class="health-bar" id="health-bar" aria-label="Здоровье" max="1" value="1"></progress>
+                    <span id="health-text" aria-hidden="true">HP 1/1</span>
+                </div>
+            </div>
+
+            <!-- Progress bar -->
+            <div class="progress-track">
+                <div class="progress-fill" id="progress-bar-fill"></div>
+            </div>
+
+            <!-- Question card -->
+            <div class="question-card">
+                <div class="question-titlebar">
+                    <p class="question-label">Вопрос <span class="answer-reaction" id="answer-reaction" role="status" hidden></span></p>
+                </div>
+                <h2 class="question-text" id="question-text">Текст вопроса</h2>
+                <div class="question-images" id="question-images"></div>
+            </div>
+
+            <!-- Answers -->
+            <div class="answers-list" id="answers-container">
+                <!-- Dynamically generated -->
+            </div>
+
+            <!-- Controls -->
+            <div class="test-controls">
+                <button type="button" title="Предыдущий вопрос" aria-label="Предыдущий вопрос" class="btn-ctrl btn-ctrl--primary question-arrow" id="btn-prev" disabled>
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"
+                        stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                        <polyline points="15 18 9 12 15 6" />
+                    </svg>
+                </button>
+                <button class="btn-ctrl btn-ctrl--primary" id="btn-submit" disabled>
+                    Ответить
+                </button>
+                <button type="button" title="Следующий вопрос" aria-label="Следующий вопрос" class="btn-ctrl btn-ctrl--primary question-arrow" id="btn-next" disabled>
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"
+                        stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                        <polyline points="9 18 15 12 9 6" />
+                    </svg>
+                </button>
+            </div>
+        </section>
+
+        <!-- ============ RESULT SCREEN ============ -->
+        <section id="result-screen" class="screen">
+            <div class="result-header">
+                <h1 class="result-title">Результаты</h1>
+            </div>
+
+            <div class="result-score">
+                <div class="score-meter" id="score-meter">
+                    <span class="score-meter-label">Точность</span>
+                    <strong class="score-meter-percent" id="score-percentage">0%</strong>
+                    <div class="score-meter-track" aria-hidden="true"><div class="score-meter-fill" id="score-meter-fill"></div></div>
+                </div>
+                <div class="result-score-copy">
+                    <p class="score-summary" id="score-details">Правильно: 0 из 0</p>
+                    <p class="score-grade" id="grade-text">Отличная работа!</p>
+                    <p class="score-achievements" id="score-achievements" hidden>
+                        <span class="score-streak" id="score-streak"></span>
+                        <span class="score-flawless" id="score-flawless" hidden>Без ошибок</span>
+                    </p>
+                </div>
+                <div class="result-actions">
+                    <button class="btn-ctrl btn-ctrl--primary" id="btn-restart">
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <polyline points="23 4 23 10 17 10" />
+                            <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10" />
+                        </svg>
+                        Перепройти все
+                    </button>
+                    <button class="btn-ctrl btn-ctrl--secondary" id="btn-retry-errors" style="display: none;">
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M1 4v6h6" />
+                            <path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10" />
+                        </svg>
+                        Перепройти ошибки
+                    </button>
+                </div>
+            </div>
+
+            <!-- Errors table -->
+            <details class="errors-panel" id="errors-section" hidden>
+                <summary class="errors-heading">Работа над ошибками</summary>
+                <div class="errors-scroll">
+                    <table class="errors-table" id="errors-table">
+                        <thead>
+                            <tr>
+                                <th>Вопрос</th>
+                                <th>Ваш ответ</th>
+                                <th>Верный ответ</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <!-- Dynamically filled -->
+                        </tbody>
+                    </table>
+                </div>
+            </details>
+
+            <section class="result-ranges" id="result-ranges" aria-label="Следующий диапазон" hidden>
+                <button type="button" class="btn-ctrl btn-ctrl--primary" id="btn-next-range" hidden></button>
+                <div id="result-range-buttons"></div>
+            </section>
+            <section class="achievement-panel" id="new-achievements" aria-live="polite" hidden>
+                <h2 class="achievement-heading">Новые достижения</h2>
+                <ul id="new-achievement-list"></ul>
+            </section>
+        </section>
+    </div>
+
+    <dialog class="achievement-panel achievement-dialog" id="achievement-dialog" aria-labelledby="achievement-title">
+        <form method="dialog" class="achievement-titlebar">
+            <h2 class="achievement-heading" id="achievement-title">Достижения</h2>
+            <button class="range-button" aria-label="Закрыть">×</button>
+        </form>
+        <p class="achievement-note" id="achievement-progress"></p>
+        <p class="achievement-note">Серии засчитываются в любой группе. Остальные награды требуют попытки от 50 вопросов или полной кампании.</p>
+        <h3 class="achievement-section-title">Открытые</h3>
+        <p class="achievement-note" id="achievement-empty">Здесь появятся твои награды.</p>
+        <ul id="achievement-list"></ul>
+        <h3 class="achievement-section-title">Ещё закрыты</h3>
+        <ul id="locked-achievement-list"></ul>
+    </dialog>
+
+    <script src="test_data.js"></script>
+    <script src="app.js?v=campaign-medals"></script>
+</body>
+
+</html>
