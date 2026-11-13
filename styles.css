@@ -2711,8 +2711,9 @@ button.achievement-card:active { box-shadow: inset 2px 2px 0 rgb(0 0 0 / 28%); }
 
 .study-card, .study-history {
     padding: 8px;
-    border: 1px solid #555;
-    background: #f3f3f3;
+    border: 1px solid var(--mac-bevel);
+    background: var(--mac-parchment);
+    box-shadow: 1px 1px var(--mac-bevel);
 }
 
 .study-card h3, .study-history h3 { font-size: 0.84rem; }
@@ -2769,8 +2770,8 @@ button.achievement-card:active { box-shadow: inset 2px 2px 0 rgb(0 0 0 / 28%); }
 
 .study-queue:not([hidden]) {
     margin-top: 7px;
-    border: 1px solid var(--mac-ink);
-    background: var(--mac-paper);
+    border: 1px solid var(--mac-bevel);
+    background: var(--mac-parchment);
     color: var(--mac-ink);
     font-size: 0.76rem;
 }
@@ -2779,6 +2780,7 @@ button.achievement-card:active { box-shadow: inset 2px 2px 0 rgb(0 0 0 / 28%); }
     cursor: pointer;
     padding: 5px 7px;
     font-weight: 700;
+    background: var(--mac-panel);
 }
 
 .study-queue[open] summary { border-bottom: 1px solid var(--mac-ink); }
@@ -2797,7 +2799,8 @@ button.achievement-card:active { box-shadow: inset 2px 2px 0 rgb(0 0 0 / 28%); }
     align-items: center;
     gap: 7px;
     padding: 5px 6px;
-    background: var(--mac-paper);
+    border-color: var(--mac-bevel);
+    background: var(--mac-parchment);
 }
 
 .study-queue-list button { margin: 0; min-height: 30px; }
@@ -2822,8 +2825,8 @@ button.achievement-card:active { box-shadow: inset 2px 2px 0 rgb(0 0 0 / 28%); }
     flex-wrap: wrap;
     gap: 2px 8px;
     padding: 4px 6px;
-    border: 1px solid #bbb;
-    background: #fff;
+    border: 1px solid #958a77;
+    background: var(--mac-parchment);
     font-size: 0.74rem;
 }
 .study-history li[data-failed="true"] { border-left: 3px solid #a74643; }
@@ -2856,17 +2859,22 @@ body[data-service-mode] .welcome-titlebar .logo-text::after {
     appearance: none;
     flex: 1 0 100%;
     height: 5px;
-    border: 1px solid #888;
-    background: #eee;
+    border: 1px solid var(--mac-bevel);
+    background: var(--mac-panel);
 }
-.study-history progress::-webkit-progress-bar { background: #eee; }
-.study-history progress::-webkit-progress-value { background: #4d805a; }
-.study-history progress::-moz-progress-bar { background: #4d805a; }
+.study-history progress::-webkit-progress-bar { background: var(--mac-panel); }
+.study-history progress::-webkit-progress-value { background: repeating-linear-gradient(90deg, #4d805a 0 3px, #6f9b79 3px 4px); }
+.study-history progress::-moz-progress-bar { background: repeating-linear-gradient(90deg, #4d805a 0 3px, #6f9b79 3px 4px); }
 
 /* Macintosh workbench: tinted window chrome, clear controls, and pixel feedback. */
 body {
     --mac-ink: #242723;
     --mac-paper: #fffdf7;
+    --mac-parchment: #f8f5e8;
+    --mac-panel: #e7e1d0;
+    --mac-bevel: #39382f;
+    --mac-sepia: #574a38;
+    --mac-selection: #e5cf9f;
     --mac-desk-a: #b4b6ab;
     --mac-desk-b: #c9ccc0;
     --mac-trim: #dbe1d3;
@@ -2903,6 +2911,9 @@ body[data-difficulty="hardcore"] {
     --mac-accent: #962e37;
     --mac-header: #3b2023;
     --mac-header-text: #fff0e9;
+    --mac-parchment: #fff1e8;
+    --mac-panel: #efd6cd;
+    --mac-bevel: #643437;
 }
 
 body[data-difficulty] .bg-gradient {
@@ -3275,9 +3286,174 @@ body[data-hardcore] .campaign-legend [data-medal="perfect"] { display: none; }
 }
 
 #achievement-dialog .achievement-emblem { border-radius: 2px; }
-#study-dialog .study-card h3 {
-    border-bottom: 1px solid #7d8376;
-    padding-bottom: 2px;
+#study-dialog {
+    background: var(--mac-paper);
+    border-color: var(--mac-bevel);
+    color: var(--mac-ink);
+}
+
+#study-dialog .achievement-titlebar {
+    background: repeating-linear-gradient(var(--mac-trim) 0 2px, #949486 2px 3px)
+        center / 100% 12px no-repeat var(--mac-trim);
+}
+
+#study-title {
+    margin-inline: auto;
+    padding-inline: 8px;
+    background: var(--mac-trim);
+}
+
+#study-dialog :is(.study-card, .study-history) h3 {
+    margin: -8px -8px 6px;
+    padding: 4px 8px;
+    border-bottom: 1px solid var(--mac-bevel);
+    background: var(--mac-panel);
+}
+
+#study-dialog .range-button,
+#result-screen .result-review-link {
+    border-color: var(--mac-bevel);
+    background: var(--mac-parchment);
+    color: var(--mac-ink);
+    box-shadow: inset 1px 1px #fff, 1px 1px var(--mac-bevel);
+}
+
+#study-dialog .range-button:not(:disabled):hover,
+#result-screen .result-review-link:hover { background: var(--mac-selection); }
+
+#welcome-screen #difficulty-label,
+#welcome-screen .difficulty-options {
+    border-color: var(--mac-bevel);
+    background: var(--mac-parchment);
+    color: var(--mac-ink);
+}
+
+#welcome-screen .difficulty-options button {
+    border-color: transparent;
+    color: var(--mac-ink);
+}
+
+#welcome-screen .difficulty-options button[aria-pressed="true"] {
+    border-color: var(--mac-bevel);
+    background: var(--mac-selection);
+}
+
+#welcome-screen .difficulty-options button:is(:hover, :focus-visible) {
+    background: var(--mac-sepia);
+    color: #fff9e9;
+}
+
+[data-hardcore] #welcome-screen #difficulty-label {
+    border-color: #643437;
+    background: var(--mac-header);
+    color: var(--mac-header-text);
+}
+
+#result-screen :is(#errors-section, .result-ranges) {
+    border-color: var(--mac-bevel);
+    background: var(--mac-parchment);
+}
+
+#result-screen #errors-section .errors-heading,
+#result-screen .errors-table th {
+    border-color: var(--mac-bevel);
+    background: var(--mac-panel);
+    color: var(--mac-ink);
+}
+
+#result-screen .errors-table td { border-color: #c8bda7; }
+#result-screen .errors-table tbody tr:hover { background: #eee7d7; }
+
+#result-screen .result-note {
+    border-color: #6c8061;
+    box-shadow: 1px 1px #6c8061;
+}
+
+#result-screen .result-ranges {
+    box-shadow: 2px 2px var(--mac-bevel);
+}
+
+body:has(#welcome-screen.active, #result-screen.active) .app-toolbar .range-button:not([aria-pressed="true"]) {
+    border-color: var(--mac-bevel);
+    background: var(--mac-parchment);
+}
+
+body:has(#welcome-screen.active, #result-screen.active) .app-toolbar .range-button:hover:not([aria-pressed="true"]) {
+    background: var(--mac-selection);
+}
+
+#welcome-screen .range-selector-container {
+    border-color: var(--mac-bevel);
+    background: var(--mac-panel);
+}
+
+#welcome-screen .range-window-title {
+    border-color: var(--mac-bevel);
+    background: repeating-linear-gradient(var(--mac-panel) 0 2px, #a89c86 2px 3px);
+}
+
+#welcome-screen .range-window-title > * { background: var(--mac-panel); }
+
+:is(#welcome-screen, #result-screen) :is(#range-buttons, #result-range-buttons) .range-button:not([data-completion]):not(:disabled) {
+    background: var(--mac-parchment);
+    color: var(--mac-ink);
+}
+
+:is(#welcome-screen, #result-screen) :is(#range-buttons, #result-range-buttons) .range-button[aria-pressed="true"]:not([data-completion]):not(:disabled) {
+    background: var(--mac-selection);
+}
+
+#test-screen :is(.progress-pill, .health-display) {
+    border-color: var(--mac-bevel);
+    background: var(--mac-parchment);
+    color: var(--mac-ink);
+    box-shadow: inset 1px 1px #fff, 1px 1px var(--mac-bevel);
+}
+
+#test-screen .health-bar::-webkit-progress-bar { background: var(--mac-panel); }
+#test-screen .health-bar::-webkit-progress-value {
+    background: repeating-linear-gradient(90deg, var(--health-fill) 0 4px, transparent 4px 5px);
+}
+#test-screen .health-bar::-moz-progress-bar {
+    background: repeating-linear-gradient(90deg, var(--health-fill) 0 4px, transparent 4px 5px);
+}
+
+#result-screen .result-score-copy .score-grade {
+    border-color: var(--mac-bevel);
+    background: var(--mac-parchment);
+}
+
+#result-screen .score-meter:not([data-tier="flawless"]) {
+    border-color: var(--mac-bevel);
+    background: var(--mac-parchment);
+}
+
+#result-screen .score-meter-label {
+    background: var(--mac-header);
+    color: var(--mac-header-text);
+}
+
+#result-screen .score-meter-track { background: var(--mac-panel); border-color: var(--mac-bevel); }
+
+#welcome-screen :is(#meta-count, #btn-resume),
+#result-screen .btn-ctrl--secondary {
+    border-color: var(--mac-bevel);
+    background: var(--mac-parchment);
+    color: var(--mac-ink);
+    box-shadow: inset 1px 1px #fff, 1px 1px var(--mac-bevel);
+}
+
+#test-screen .answer-key { background: var(--mac-parchment); border-color: var(--mac-bevel); }
+#test-screen .answer-card.selected:not(.disabled) .answer-key { background: var(--mac-accent); }
+#test-screen .answer-card.correct .answer-key { background: #285d42; }
+#test-screen .answer-card.wrong .answer-key { background: #963832; }
+
+#result-screen #errors-section .errors-scroll { background: var(--mac-parchment); }
+
+#result-screen #errors-section .errors-count {
+    border-color: var(--mac-bevel);
+    background: var(--mac-parchment);
+    color: var(--mac-ink);
 }
 
 /* Compact striped title bar for the range picker. */
@@ -3501,3 +3677,124 @@ body[data-hardcore] .campaign-legend [data-medal="perfect"] { display: none; }
         user-select: none;
     }
 }
+
+/* The achievement cabinet uses the wardrobe's window chrome. */
+#achievement-dialog {
+    width: min(640px, calc(100% - 20px));
+    background: var(--mac-paper);
+    border-color: var(--mac-bevel);
+    color: var(--mac-ink);
+}
+
+#achievement-dialog .achievement-titlebar {
+    background: repeating-linear-gradient(var(--mac-trim) 0 2px, #949486 2px 3px)
+        center / 100% 12px no-repeat var(--mac-trim);
+}
+
+#achievement-title {
+    margin-inline: auto;
+    padding-inline: 8px;
+    background: var(--mac-trim);
+}
+
+#achievement-dialog .achievement-overview,
+#achievement-dialog .achievement-shelf {
+    margin-top: 8px;
+    padding: 7px;
+    border: 1px solid var(--mac-bevel);
+    background: var(--mac-panel);
+}
+
+#achievement-dialog #achievement-progress { margin-top: 0; font-weight: 750; }
+#achievement-dialog #achievement-meter {
+    display: block;
+    appearance: none;
+    width: 100%;
+    height: 8px;
+    margin-top: 4px;
+    border: 1px solid var(--mac-bevel);
+    background: var(--mac-parchment);
+    accent-color: var(--mac-accent);
+}
+#achievement-meter::-webkit-progress-bar { background: var(--mac-parchment); }
+#achievement-meter::-webkit-progress-value {
+    background: repeating-linear-gradient(90deg, var(--mac-accent) 0 5px, transparent 5px 6px);
+}
+#achievement-meter::-moz-progress-bar {
+    background: repeating-linear-gradient(90deg, var(--mac-accent) 0 5px, transparent 5px 6px);
+}
+
+#achievement-dialog .achievement-section-title { margin-top: 0; border-color: var(--mac-bevel); }
+#achievement-dialog .achievement-shelf ul:empty { display: none; }
+#new-achievements {
+    background: var(--mac-panel);
+    border-color: var(--mac-bevel);
+}
+
+:is(#achievement-dialog, #new-achievements) .achievement-card {
+    min-height: 54px;
+    padding: 5px 6px;
+    background: var(--mac-parchment);
+    color: var(--mac-ink);
+    border-radius: 0;
+    overflow-wrap: anywhere;
+}
+:is(#achievement-dialog, #new-achievements) li:has(.achievement-card) {
+    padding: 0;
+    border: 1px solid #958a77;
+    box-shadow: 1px 1px var(--mac-bevel);
+}
+:is(#achievement-dialog, #new-achievements) li[data-unlocked] > .achievement-card {
+    background: var(--emblem-fill, #fff6da);
+    color: var(--emblem-ink, #58451c);
+    box-shadow: inset 1px 1px rgb(255 255 255 / 45%);
+}
+:is(#achievement-dialog, #new-achievements) li[data-unlocked][data-legendary] > .achievement-card {
+    background: transparent;
+    color: #34213a;
+}
+:is(#achievement-dialog, #new-achievements) .achievement-emblem {
+    border: 1px solid currentColor;
+    box-shadow: inset 1px 1px rgb(255 255 255 / 50%), 1px 1px currentColor;
+}
+:is(#achievement-dialog, #new-achievements) .achievement-emblem svg { shape-rendering: crispEdges; }
+
+@media (min-width: 600px) {
+    #achievement-dialog .achievement-shelf ul { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+
+#settings-dialog {
+    color: var(--mac-ink);
+    background: var(--mac-parchment, #f8f5e8);
+}
+
+#settings-dialog .achievement-titlebar {
+    background: repeating-linear-gradient(var(--mac-trim) 0 2px, #949486 2px 3px) center / 100% 12px no-repeat var(--mac-trim);
+}
+
+#settings-title { padding-inline: 8px; background: var(--mac-trim); }
+
+.reset-options, .reset-confirm:not([hidden]) {
+    display: grid;
+    gap: 6px;
+    margin-top: 8px;
+    padding: 8px;
+    border: 1px solid var(--mac-ink);
+    background: var(--mac-panel, #e7e1d0);
+}
+
+#settings-dialog .range-button {
+    min-height: 30px;
+    padding: 4px 8px;
+    border: 1px solid var(--mac-ink);
+    background: var(--mac-parchment, #f8f5e8);
+    color: var(--mac-ink);
+    box-shadow: inset 1px 1px #fff, 1px 1px var(--mac-ink);
+}
+
+#settings-dialog .reset-danger { background: #f2d0cd; color: #612823; }
+.reset-options .range-button { text-align: left; }
+.reset-confirm h3 { font-size: .88rem; }
+.reset-confirm p, .reset-status { font-size: .78rem; }
+.reset-actions { display: flex; flex-wrap: wrap; justify-content: end; gap: 8px; }
+.reset-status:not([hidden]) { margin-top: 8px; }

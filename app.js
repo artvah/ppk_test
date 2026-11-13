@@ -63,6 +63,7 @@ const submitLabel = document.getElementById('submit-label');
 const submitIcon = btnSubmit.querySelector('use');
 const btnNext = document.getElementById('btn-next');
 const btnMenu = document.getElementById('btn-menu');
+const btnSettings = document.getElementById('btn-settings');
 const btnAchievements = document.getElementById('btn-achievements');
 const achievementDialog = document.getElementById('achievement-dialog');
 const btnStudy = document.getElementById('btn-study');
@@ -97,6 +98,7 @@ const menuStorageKey = 'ppk-test-menu-v1';
 const studyStorageKey = 'ppk-test-study-v1';
 const soundStorageKey = 'ppk-test-sound-v1';
 const retroFontStorageKey = 'ppk-test-retro-font';
+const rangeStorageKey = 'ppk-test-range';
 const copyableText = '#test-screen .question-text, #test-screen .answer-text-label, #errors-table tbody td, .study-queue-question';
 let questionBankVersion;
 
@@ -205,6 +207,12 @@ function readSavedAttempt() {
     } catch { return null; }
 }
 
+function removeSavedKeys(keys) {
+    for (const key of keys) {
+        try { localStorage.removeItem(key); } catch { /* Keep the reset for the current session. */ }
+    }
+}
+
 function restoreAttempt() {
     const saved = readSavedAttempt();
     if (!saved || saved.bank !== questionBankVersion || !orderModes.includes(saved.orderMode) ||
@@ -243,6 +251,7 @@ function restoreAttempt() {
     studyRun = ['review', 'daily', 'bookmarks'].includes(saved.studyRun?.kind) ? saved.studyRun : null;
     attemptId = typeof saved.attemptId === 'string' ? saved.attemptId : null;
     runUnlocks = Array.isArray(saved.unlocks) ? saved.unlocks
+        .filter(id => unlockedAchievements.has(id))
         .map(id => achievementCatalog.find(item => item.id === id)).filter(Boolean) : [];
     if (saved.screen === 'result' || saved.failed) {
         finishTest(Boolean(saved.failed), saved.screen === 'result');
@@ -302,12 +311,13 @@ const achievementCatalog = [
 ];
 
 const achievementIcons = {
-    'last-hp': '<path d="M2 7h19v3h2v4h-2v3H2zM12 7l-2 5h4l-2 5"/><path fill="currentColor" stroke="none" d="M4 9h3v6H4z"/>',
-    flawless: '<path d="M12 2l3 6 7 1-5 5 1 7-6-3-6 3 1-7-5-5 7-1z"/><path d="m9 12 2 2 4-4M4 3v4M2 5h4m14 13v4m-2-2h4"/>',
-    comeback: '<path d="M2 13h5l2-6 4 11 3-5h6M3 4h18v16H3z"/>',
-    streak: '<path d="M13 2 5 13h6l-1 9 9-12h-6z"/><path d="M3 6h4M2 9h3m12 9h4m-5 3h3"/>',
-    campaign: '<path d="M3 22h9M6 22V3h14l-4 4 4 4H6M9 6h2m1 3h2"/><path fill="currentColor" stroke="none" d="M3 2h4v3H3z"/>',
-    standard: '<path d="M3 2h13l5 5v15H3zM6 2v7h11V4M6 22V13h12v9m-9-6h6m-6 3h6"/>',
+    'last-hp': '<path d="M1 4h14v2h1v4h-1v2H1zm1 1v6h12V5z" fill-rule="evenodd"/><path d="M3 6h2v4H3zm6 0h3v1h-1v1h1v1h-2v1H8V8h1z"/>',
+    flawless: '<path d="M7 1h2v2h1v2h5v2h-2v2h-2v5H9v-1H7v1H5V9H3V7H1V5h5V3h1zm0 6H6v1h1v1h2V8h1V6H9v1H8v1H7z" fill-rule="evenodd"/>',
+    comeback: '<path d="M1 3h14v10H1zm1 1v8h12V4z" fill-rule="evenodd"/><path d="M3 8h2V6h1v2h1v2h1V7h1V5h1v3h3v1h-4v2H7V9H6V8H5v1H3z"/>',
+    streak: '<path d="M9 1h3v2h-1v2h-1v1h3v2h-2v2H9v2H7v3H4v-2h1v-2h1V9H3V7h2V5h2V3h2z"/><path d="M1 3h4v1H1zm11 9h3v1h-3zm-2 2h3v1h-3z"/>',
+    campaign: '<path d="M3 1h2v1h9v2h-1v2h1v2H5v5h3v2H1v-2h2zm3 2v1h2V3zm2 1v2h2V4zm2 2v1h2V6z" fill-rule="evenodd"/>',
+    standard: '<path d="M2 1h10v1h2v13H2zm2 1v4h8V3h-1v2h-1V2zm0 7v5h8V9z" fill-rule="evenodd"/><path d="M5 10h5v1H5zm0 2h4v1H5z"/>',
+    secret: '<path d="M1 2h14v10H1zm1 1v7h12V3z" fill-rule="evenodd"/><path d="M5 5h1v1H5zm5 0h1v1h-1zM6 7h1v1h2V7h1v2H6zm1 5h2v2h3v1H4v-1h3z"/>',
 };
 
 function loadAchievements() {
@@ -321,6 +331,7 @@ function loadAchievements() {
 }
 
 const unlockedAchievements = loadAchievements();
+const quizPet = createQuizPet('ppk-test-pet-v1', unlockedAchievements, achievementCatalog, playSound);
 let runUnlocks = [];
 
 function loadStudyData() {
@@ -414,13 +425,18 @@ function dailyStreakEnding(day, completedDays = new Set(studyData.daily)) {
     return streak;
 }
 
+function currentDailyStreak(now = new Date(), completed = new Set(studyData.daily)) {
+    if (completed.has(localStudyDay(now))) return dailyStreakEnding(localStudyDay(now), completed);
+    const yesterday = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 1, 12);
+    return dailyStreakEnding(localStudyDay(yesterday), completed);
+}
+
 function renderDailyCalendar() {
     const now = new Date();
     const completed = new Set(studyData.daily);
     const perfect = new Set(studyData.dailyPerfect);
     const calendar = document.getElementById('study-daily-calendar');
     const date = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 6, 12);
-    let yesterday;
     const tiles = [];
     for (let i = 0; i < 7; i++) {
         const day = localStudyDay(date);
@@ -436,7 +452,6 @@ function renderDailyCalendar() {
         tile.title = `${date.toLocaleDateString('ru-RU')} · ${statusText}`;
         mark.setAttribute('aria-hidden', 'true');
         mark.textContent = { perfect: '★', done: '✓', empty: '·' }[status];
-        if (i === 5) yesterday = day;
         if (i === 6) number.setAttribute('aria-current', 'date');
         tile.append(number, mark);
         tiles.push(tile);
@@ -444,7 +459,7 @@ function renderDailyCalendar() {
     }
     calendar.replaceChildren(...tiles);
     const today = localStudyDay(now);
-    const streak = dailyStreakEnding(completed.has(today) ? today : yesterday, completed);
+    const streak = currentDailyStreak(now, completed);
     document.getElementById('study-daily-streak').textContent = `Серия подряд: ${streak}`;
     return completed.has(today);
 }
@@ -582,13 +597,24 @@ btnStudyReviewAll.addEventListener('click', () => startStudy('review'));
 btnStudyDaily.addEventListener('click', () => startStudy('daily'));
 
 let serviceClicks = 0;
+const discoveryPreviewUrl = new URL(window.location.href);
+let replayDiscovery = discoveryPreviewUrl.searchParams.get('replay-mushroom') === '1';
 document.querySelector('.welcome-titlebar').addEventListener('click', () => {
     serviceClicks += 1;
     if (serviceClicks !== 5) return;
     serviceClicks = 0;
     const enabled = document.body.toggleAttribute('data-service-mode');
     if (!enabled) return;
+    const firstDiscovery = !unlockedAchievements.has('study-secret');
     unlockAchievements(achievementCatalog.filter(item => item.id === 'study-secret'));
+    if (firstDiscovery || replayDiscovery) {
+        if (replayDiscovery) {
+            replayDiscovery = false;
+            discoveryPreviewUrl.searchParams.delete('replay-mushroom');
+            history.replaceState(history.state, '', discoveryPreviewUrl);
+        }
+        quizPet.discover();
+    }
 });
 
 function unlockAchievements(items) {
@@ -638,10 +664,11 @@ function renderAchievementList(id, items) {
         const copy = document.createElement('span');
         const title = document.createElement('strong');
         const description = document.createElement('span');
-        const variant = item.icon || 'standard';
+        const variant = item.id === 'study-secret' ? 'secret' : item.icon || 'standard';
+        copy.className = 'achievement-copy';
         icon.className = 'achievement-emblem';
         icon.setAttribute('aria-hidden', 'true');
-        icon.innerHTML = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">${achievementIcons[item.campaign ? 'campaign' : variant]}</svg>`;
+        icon.innerHTML = `<svg viewBox="0 0 16 16" fill="currentColor">${achievementIcons[item.campaign ? 'campaign' : variant]}</svg>`;
         title.textContent = item.title;
         description.textContent = item.description;
         entry.dataset.variant = variant;
@@ -659,12 +686,14 @@ function renderAchievementList(id, items) {
     }));
 }
 
-function showNewAchievements(completed, flawless, campaignCompleted, studyResult) {
+function showNewAchievements(completed, flawless, campaignCompleted, studyResult, restoringResult) {
     const panel = document.getElementById('new-achievements');
     const run = { total: testOrder.length, difficulty: runDifficulty, streak: bestStreak,
         finalStreak: correctStreak, health, completed, flawless, campaignCompleted, ...studyResult };
-    unlockAchievements(achievementCatalog.filter(item =>
-        (item.campaign || item.live || item.study || run.total >= 50) && item.earned(run)));
+    if (!restoringResult) {
+        unlockAchievements(achievementCatalog.filter(item =>
+            (item.campaign || item.live || item.study || run.total >= 50) && item.earned(run)));
+    }
     panel.hidden = runUnlocks.length === 0;
     if (panel.hidden) return;
 
@@ -674,6 +703,9 @@ function showNewAchievements(completed, flawless, campaignCompleted, studyResult
 btnAchievements.addEventListener('click', () => {
     document.getElementById('achievement-progress').textContent =
         `Открыто ${unlockedAchievements.size} из ${achievementCatalog.length}`;
+    const meter = document.getElementById('achievement-meter');
+    meter.max = achievementCatalog.length;
+    meter.value = unlockedAchievements.size;
     const byId = new Map(achievementCatalog.map(item => [item.id, item]));
     renderAchievementList('achievement-list', Array.from(unlockedAchievements, id => byId.get(id)).reverse());
     renderAchievementList('locked-achievement-list', achievementCatalog.filter(item => !unlockedAchievements.has(item.id)));
@@ -941,7 +973,6 @@ function setupRangeButtons(total, resultBlock = null) {
     const summary = document.getElementById('range-summary');
     const sizes = [5, 10, 25, 50];
     const campaign = orderMode === 'campaign';
-    const storageKey = 'ppk-test-range';
     const label = (start, end) => `${start + 1}–${end}`;
     let hundred = resultBlock;
     let fifty = onResults ? Math.floor(activeRange.start / 50) * 50 : null;
@@ -957,7 +988,7 @@ function setupRangeButtons(total, resultBlock = null) {
         }
     } else if (!onResults) {
         try {
-            const saved = JSON.parse(localStorage.getItem(storageKey));
+            const saved = JSON.parse(localStorage.getItem(rangeStorageKey));
             if (saved && sizes.includes(saved.size)) {
                 size = saved.size;
                 if (Number.isInteger(saved.hundred) && saved.hundred >= 0 &&
@@ -1039,7 +1070,7 @@ function setupRangeButtons(total, resultBlock = null) {
                     render();
                     if (!onResults && !campaign) {
                         try {
-                            localStorage.setItem(storageKey, JSON.stringify({ hundred, fifty, size, part }));
+                            localStorage.setItem(rangeStorageKey, JSON.stringify({ hundred, fifty, size, part }));
                         } catch {
                             // Keep the selection in memory for this page.
                         }
@@ -1268,6 +1299,112 @@ function openSavedMenu() {
     showScreen(welcomeScreen);
 }
 
+// Reset choices act on the current test's own save data.
+const settingsDialog = document.getElementById('settings-dialog');
+const resetOptions = document.getElementById('reset-options');
+const resetConfirm = document.getElementById('reset-confirm');
+const resetStatus = document.getElementById('reset-status');
+const resetCancel = document.getElementById('btn-reset-cancel');
+let pendingReset = null;
+const resetDescriptions = {
+    pet: 'Баланс и купленные вещи исчезнут. Дискеты за блоки можно будет заработать заново.',
+    progress: 'Кампании на всех сложностях, текущая попытка, журнал ошибок и рекорды будут сброшены.',
+    achievements: 'Открытые достижения и награды за них будут сброшены.',
+    all: 'Кампании, попытка, журнал, закладки, достижения, гардероб, дискеты и настройки этого теста будут сброшены.',
+};
+
+function resetProgress(full) {
+    for (const mode of Object.keys(difficultyNames)) {
+        const key = campaignStorageKey(mode);
+        removeSavedKeys([key, `${key}-perfect`, `${key}-ratings`]);
+        campaignProgressByDifficulty.set(mode, 0);
+        campaignPerfectByDifficulty.set(mode, new Set());
+        campaignAttemptsByDifficulty.set(mode, new Map());
+    }
+    lastAttempt = 'null';
+    activeRange = null;
+    runUnlocks = [];
+    removeSavedKeys([sessionStorageKey, rangeStorageKey]);
+    Object.assign(studyData, { mistakes: [], fixed: [], daily: [], dailyPerfect: [], history: [], records: {} });
+    if (full) studyData.bookmarks = [];
+    saveStudyData();
+    updateResumeButton();
+    showScreen(welcomeScreen);
+}
+
+function resetAchievements() {
+    unlockedAchievements.clear();
+    runUnlocks = [];
+    serviceClicks = 0;
+    document.body.removeAttribute('data-service-mode');
+    document.getElementById('new-achievements').hidden = true;
+    removeSavedKeys([achievementStorageKey]);
+    const saved = readSavedAttempt();
+    if (!saved) return;
+    saved.unlocks = [];
+    lastAttempt = JSON.stringify(saved);
+    try { localStorage.setItem(sessionStorageKey, lastAttempt); } catch { /* Keep the cleared list for this visit. */ }
+}
+
+function resetEverything() {
+    resetAchievements();
+    quizPet.reset(true);
+    removeSavedKeys([menuStorageKey, soundStorageKey, retroFontStorageKey]);
+    soundEnabled = true;
+    orderMode = 'random';
+    difficulty = 'peaceful';
+    runDifficulty = difficulty;
+    updateSoundButton();
+    setRetroFont(false);
+    updateOrderLabel();
+    updateDifficultyMenu();
+    resetProgress(true);
+}
+
+function dismissReset() {
+    const trigger = pendingReset;
+    pendingReset = null;
+    resetConfirm.hidden = true;
+    trigger?.focus();
+}
+
+btnSettings.addEventListener('click', () => {
+    pendingReset = null;
+    resetConfirm.hidden = true;
+    resetStatus.hidden = true;
+    settingsDialog.showModal();
+});
+
+resetOptions.addEventListener('click', event => {
+    const button = event.target.closest('button[data-reset]');
+    if (!button) return;
+    pendingReset = button;
+    document.getElementById('reset-confirm-title').textContent = button.textContent;
+    document.getElementById('reset-confirm-note').textContent = resetDescriptions[button.dataset.reset];
+    resetStatus.hidden = true;
+    resetConfirm.hidden = false;
+    resetCancel.focus();
+});
+
+resetCancel.addEventListener('click', dismissReset);
+settingsDialog.addEventListener('cancel', event => {
+    if (!pendingReset) return;
+    event.preventDefault();
+    dismissReset();
+});
+
+document.getElementById('btn-reset-confirm').addEventListener('click', () => {
+    if (!pendingReset) return;
+    const category = pendingReset.dataset.reset;
+    if (category === 'pet') quizPet.reset();
+    if (category === 'progress') resetProgress(false);
+    if (category === 'achievements') resetAchievements();
+    if (category === 'all') resetEverything();
+    dismissReset();
+    resetStatus.textContent = 'Сброс выполнен.';
+    resetStatus.hidden = false;
+});
+
 document.addEventListener('click', event => {
     if (difficultyMenu.open && !difficultyMenu.contains(event.target)) difficultyMenu.open = false;
 });
@@ -1380,6 +1517,8 @@ function showScreen(screen) {
     btnMenu.hidden = screen === welcomeScreen;
     btnAchievements.hidden = screen === testScreen;
     btnStudy.hidden = screen === testScreen;
+    btnSettings.hidden = screen === testScreen;
+    quizPet.setVisible(screen !== testScreen);
     testScreen.toggleAttribute('data-training', Boolean(studyRun));
     window.scrollTo(0, 0);
     if (screen === welcomeScreen) fitWelcomeScreen();
@@ -1759,7 +1898,13 @@ function finishTest(failed = false, restoringResult = false) {
     const pendingReview = reviewIndexes().length;
     btnResultReview.textContent = `К повтору в журнале: ${pendingReview}`;
     btnResultReview.hidden = pendingReview === 0;
-    showNewAchievements(completed && !studyRun, flawless, campaignCompleted, studyResult);
+    showNewAchievements(completed && !studyRun, flawless, campaignCompleted, studyResult, restoringResult);
+    const petStart = activeRange?.start ?? 0;
+    const petEnd = activeRange?.end ?? testData.questions.length;
+    quizPet.record({
+        block: !studyRun && !retryingErrors ? `${questionBankVersion}:${activeRange?.size ?? petEnd}:${petStart}:${petEnd}` : null,
+        correct: correctCount, completed, attempt: attemptId, restoring: restoringResult,
+    });
     saveAttempt('result', failed);
 
     resultErrors = errors;
