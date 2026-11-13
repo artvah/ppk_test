@@ -14,6 +14,8 @@ let answerShuffleMap = {};     // questionIndex -> [shuffled answer indexes]
 const orderModes = ['random', 'sequential', 'campaign'];
 let orderMode = 'random';
 let retryingErrors = false;
+let studyRun = null;
+let attemptId = null;
 let health = 0;
 let correctStreak = 0;
 let bestStreak = 0;
@@ -56,6 +58,11 @@ const btnNext = document.getElementById('btn-next');
 const btnMenu = document.getElementById('btn-menu');
 const btnAchievements = document.getElementById('btn-achievements');
 const achievementDialog = document.getElementById('achievement-dialog');
+const btnStudy = document.getElementById('btn-study');
+const studyDialog = document.getElementById('study-dialog');
+const btnStudyReview = document.getElementById('btn-study-review');
+const btnStudyReviewAll = document.getElementById('btn-study-review-all');
+const btnStudyDaily = document.getElementById('btn-study-daily');
 
 const scorePercentage = document.getElementById('score-percentage');
 const scoreDetails = document.getElementById('score-details');
@@ -72,6 +79,7 @@ const btnRestart = document.getElementById('btn-restart');
 
 const achievementStorageKey = 'ppk-test-achievements-v1';
 const sessionStorageKey = 'ppk-test-attempt-v1';
+const studyStorageKey = 'ppk-test-study-v1';
 const copyableText = '#test-screen .question-text, #test-screen .answer-text-label, #errors-table tbody td';
 let questionBankVersion;
 
@@ -91,9 +99,9 @@ document.addEventListener('copy', event => {
 function saveAttempt(screen = 'test', failed = false) {
     try {
         localStorage.setItem(sessionStorageKey, JSON.stringify({
-            bank: questionBankVersion, screen, failed, orderMode, runDifficulty, activeRange,
+            bank: questionBankVersion, screen, failed, orderMode, difficulty, runDifficulty, activeRange,
             testOrder, currentIndex, answerShuffleMap, userAnswers, selectedAnswerId,
-            health, correctStreak, bestStreak, retryingErrors, unlocks: runUnlocks.map(item => item.id),
+            health, correctStreak, bestStreak, retryingErrors, studyRun, attemptId, unlocks: runUnlocks.map(item => item.id),
         }));
     } catch {
         // The test still works when browser storage is unavailable.
@@ -125,8 +133,9 @@ function restoreAttempt() {
         })) return;
 
     orderMode = saved.orderMode;
-    difficulty = saved.runDifficulty;
-    runDifficulty = difficulty;
+    difficulty = Array.from(difficultyOptions).some(option => option.dataset.difficulty === saved.difficulty)
+        ? saved.difficulty : saved.runDifficulty;
+    runDifficulty = saved.runDifficulty;
     updateOrderLabel();
     updateDifficultyMenu();
     activeRange = range;
@@ -139,6 +148,8 @@ function restoreAttempt() {
     correctStreak = saved.correctStreak;
     bestStreak = saved.bestStreak;
     retryingErrors = saved.retryingErrors;
+    studyRun = ['review', 'daily'].includes(saved.studyRun?.kind) ? saved.studyRun : null;
+    attemptId = typeof saved.attemptId === 'string' ? saved.attemptId : null;
     runUnlocks = Array.isArray(saved.unlocks) ? saved.unlocks
         .map(id => achievementCatalog.find(item => item.id === id)).filter(Boolean) : [];
     if (saved.screen === 'result' || saved.failed) {
@@ -176,6 +187,14 @@ const achievementCatalog = [
         earned: run => run.completed && run.health === 1 },
     { id: 'comeback', icon: 'comeback', title: 'Собрался', description: 'После ошибки закончить попытку серией из 10 или больше верных ответов.',
         earned: run => run.completed && !run.flawless && run.finalStreak >= 10 },
+    { id: 'study-review-10', icon: 'comeback', tone: 'normal', title: 'Ремонтная мастерская',
+        description: 'Исправить 10 разных ошибок через журнал подготовки.',
+        study: true, earned: run => run.fixed >= 10 },
+    { id: 'study-daily-perfect', icon: 'flawless', tone: 'hard', title: 'День без помарок',
+        description: 'Закончить задание дня без ошибок.',
+        study: true, earned: run => run.dailyPerfect },
+    { id: 'study-secret', icon: 'standard', tone: 'normal', title: 'Сервисный режим',
+        description: 'Найти спрятанный переключатель в окне TestMaster.', earned: () => false },
     ...Array.from(difficultyOptions, option => ({
         id: `campaign-${option.dataset.difficulty}`,
         icon: `campaign-${option.dataset.difficulty}`,
@@ -208,6 +227,141 @@ function loadAchievements() {
 
 const unlockedAchievements = loadAchievements();
 let runUnlocks = [];
+
+function loadStudyData() {
+    try {
+        const data = JSON.parse(localStorage.getItem(studyStorageKey));
+        if (data && Array.isArray(data.mistakes) && Array.isArray(data.fixed) && Array.isArray(data.history) &&
+            Array.isArray(data.daily)) return data;
+    } catch {
+        // Study data is optional when browser storage is unavailable.
+    }
+    return { mistakes: [], fixed: [], history: [], daily: [] };
+}
+
+const studyData = loadStudyData();
+
+function saveStudyData() {
+    try {
+        localStorage.setItem(studyStorageKey, JSON.stringify(studyData));
+    } catch {
+        // Keep the current journal available until the page closes.
+    }
+}
+
+function studyQuestionKey(question, index) {
+    return question.id == null ? `${questionBankVersion}:${index}` : String(question.id);
+}
+
+function reviewIndexes() {
+    const pending = new Set(studyData.mistakes);
+    return testData.questions.flatMap((question, index) => pending.has(studyQuestionKey(question, index)) ? [index] : []);
+}
+
+function localStudyDay() {
+    const now = new Date();
+    return [now.getFullYear(), now.getMonth() + 1, now.getDate()].map(value => String(value).padStart(2, '0')).join('-');
+}
+
+function dailyIndexes(day) {
+    const indexes = testData.questions.map((_, index) => index);
+    let seed = (Number(day.replaceAll('-', '')) ^ questionBankVersion) >>> 0;
+    for (let i = indexes.length - 1; i > 0; i--) {
+        seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0;
+        const j = seed % (i + 1);
+        [indexes[i], indexes[j]] = [indexes[j], indexes[i]];
+    }
+    return indexes.slice(0, 5);
+}
+
+function startStudy(kind, all = false) {
+    const day = kind === 'daily' ? localStudyDay() : null;
+    let indexes = kind === 'daily' ? dailyIndexes(day) : reviewIndexes();
+    if (kind === 'review' && !all) indexes = indexes.slice(0, 10);
+    if (!indexes.length || (kind === 'daily' && studyData.daily.includes(day))) return;
+    studyDialog.close();
+    initTest(testData, false, null, { kind, day, indexes });
+}
+
+function recordStudyAnswer(questionIndex, correct) {
+    const index = (activeRange?.start ?? 0) + questionIndex;
+    const key = studyQuestionKey(questions[questionIndex], index);
+    if (!correct && !studyData.mistakes.includes(key)) studyData.mistakes.push(key);
+    if (correct && studyRun?.kind === 'review' && studyData.mistakes.includes(key)) {
+        studyData.mistakes = studyData.mistakes.filter(item => item !== key);
+        if (!studyData.fixed.includes(key)) studyData.fixed.push(key);
+    }
+    saveStudyData();
+}
+
+function recordStudyResult(correct, errors, completed, flawless, failed) {
+    const dailyFinished = studyRun?.kind === 'daily' && !retryingErrors && completed;
+    const dailyPerfect = dailyFinished && flawless;
+    if (dailyFinished && !studyData.daily.includes(studyRun.day)) {
+        studyData.daily = [...studyData.daily, studyRun.day].slice(-31);
+    }
+    if (attemptId && !studyData.history.some(entry => entry.id === attemptId)) {
+        studyData.history.unshift({ id: attemptId, time: Date.now(), kind: studyRun?.kind ?? (retryingErrors ? 'retry' : orderMode),
+            difficulty: runDifficulty, correct, errors, total: testOrder.length, failed });
+        studyData.history.length = Math.min(studyData.history.length, 16);
+    }
+    saveStudyData();
+    return { dailyPerfect, fixed: studyData.fixed.length };
+}
+
+function showStudyDialog() {
+    if (!testData) return;
+    const pending = reviewIndexes().length;
+    document.getElementById('study-review-note').textContent = pending
+        ? `К повтору: ${pending}. Верный ответ убирает вопрос из списка.` : 'Пока нет вопросов для повтора.';
+    btnStudyReview.disabled = btnStudyReviewAll.disabled = pending === 0;
+    const dailyDone = studyData.daily.includes(localStudyDay());
+    btnStudyDaily.disabled = dailyDone;
+    document.getElementById('study-daily-note').textContent = dailyDone
+        ? 'На сегодня выполнено. Новый набор появится завтра.' : 'Пять вопросов на сегодня. Без ошибок — отдельная награда.';
+    const list = document.getElementById('study-history-list');
+    const names = { daily: 'Задание дня', review: 'Повтор ошибок', retry: 'Работа над ошибками', campaign: 'Кампания', random: 'Случайный порядок', sequential: 'Последовательный порядок' };
+    const difficultyNames = Object.fromEntries(Array.from(difficultyOptions, option => [option.dataset.difficulty, option.textContent]));
+    document.getElementById('study-history-empty').hidden = studyData.history.length > 0;
+    const summary = document.getElementById('study-history-summary');
+    const answered = studyData.history.reduce((sum, entry) => sum + entry.correct + entry.errors, 0);
+    const correct = studyData.history.reduce((sum, entry) => sum + entry.correct, 0);
+    summary.hidden = answered === 0;
+    summary.textContent = answered ? `Точность по данным журнала: ${Math.round(100 * correct / answered)}% · Исправлено ошибок: ${studyData.fixed.length}` : '';
+    list.replaceChildren(...studyData.history.map(entry => {
+        const row = document.createElement('li');
+        const title = document.createElement('strong');
+        const detail = document.createElement('span');
+        const meter = document.createElement('progress');
+        const kind = names[entry.kind] ?? 'Тест';
+        const titleDifficulty = difficultyNames[entry.difficulty];
+        title.textContent = titleDifficulty && !['review', 'daily'].includes(entry.kind) ? `${kind} · ${titleDifficulty}` : kind;
+        detail.textContent = `${new Date(entry.time).toLocaleDateString('ru-RU')} · ${entry.correct}/${entry.total}` +
+            (entry.failed ? ' · Провал' : ` · Ошибок: ${entry.errors}`);
+        meter.max = entry.total;
+        meter.value = entry.correct;
+        meter.setAttribute('aria-hidden', 'true');
+        row.dataset.failed = String(entry.failed);
+        row.append(title, detail, meter);
+        return row;
+    }));
+    studyDialog.showModal();
+}
+
+btnStudy.addEventListener('click', showStudyDialog);
+btnStudyReview.addEventListener('click', () => startStudy('review'));
+btnStudyReviewAll.addEventListener('click', () => startStudy('review', true));
+btnStudyDaily.addEventListener('click', () => startStudy('daily'));
+
+let serviceClicks = 0;
+document.querySelector('.welcome-titlebar').addEventListener('click', () => {
+    serviceClicks += 1;
+    if (serviceClicks !== 5) return;
+    serviceClicks = 0;
+    const enabled = document.body.toggleAttribute('data-service-mode');
+    if (!enabled) return;
+    unlockAchievements(achievementCatalog.filter(item => item.id === 'study-secret'));
+});
 
 function unlockAchievements(items) {
     const earned = items.filter(item => !unlockedAchievements.has(item.id));
@@ -276,12 +430,12 @@ function renderAchievementList(id, items) {
     }));
 }
 
-function showNewAchievements(completed, flawless, campaignCompleted) {
+function showNewAchievements(completed, flawless, campaignCompleted, studyResult) {
     const panel = document.getElementById('new-achievements');
     const run = { total: testOrder.length, difficulty: runDifficulty, streak: bestStreak,
-        finalStreak: correctStreak, health, completed, flawless, campaignCompleted };
+        finalStreak: correctStreak, health, completed, flawless, campaignCompleted, ...studyResult };
     unlockAchievements(achievementCatalog.filter(item =>
-        (item.campaign || item.live || run.total >= 50) && item.earned(run)));
+        (item.campaign || item.live || item.study || run.total >= 50) && item.earned(run)));
     panel.hidden = runUnlocks.length === 0;
     if (panel.hidden) return;
 
@@ -830,7 +984,7 @@ function shuffleArray(arr) {
 // ==========================================================
 //  INIT TEST
 // ==========================================================
-function initTest(data, onlyErrors = false, range) {
+function initTest(data, onlyErrors = false, range, training = null) {
     testData = data;
 
     if (onlyErrors) {
@@ -841,7 +995,13 @@ function initTest(data, onlyErrors = false, range) {
             const correct = q.answers.find(a => a.is_correct);
             if (answerId !== undefined && correct?.id !== answerId) errorIndexes.push(idx);
         });
+        if (!errorIndexes.length) return;
         testOrder = orderMode === 'random' ? shuffleArray(errorIndexes) : errorIndexes.sort((a, b) => a - b);
+        training = studyRun;
+    } else if (training) {
+        activeRange = null;
+        questions = data.questions;
+        testOrder = training.indexes;
     } else {
         const rangeSelect = document.getElementById('range-select');
         if (range === undefined && rangeSelect.value !== 'all') {
@@ -857,11 +1017,13 @@ function initTest(data, onlyErrors = false, range) {
     }
 
     currentIndex = 0;
+    studyRun = training;
+    attemptId = globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random()}`;
     retryingErrors = onlyErrors;
     userAnswers = {};
     answerShuffleMap = {};
     health = testOrder.length;
-    runDifficulty = difficulty;
+    runDifficulty = studyRun ? 'peaceful' : difficulty;
     correctStreak = 0;
     bestStreak = 0;
     runUnlocks = [];
@@ -890,7 +1052,10 @@ function showScreen(screen) {
     if (screen === welcomeScreen && orderMode === 'campaign') setupRangeButtons(testData.questions.length);
     btnMenu.hidden = screen === welcomeScreen;
     btnAchievements.hidden = screen === testScreen;
+    btnStudy.hidden = screen === testScreen;
+    testScreen.toggleAttribute('data-training', Boolean(studyRun));
     window.scrollTo(0, 0);
+    if (screen === welcomeScreen) fitWelcomeScreen();
 }
 
 // ==========================================================
@@ -1042,6 +1207,7 @@ function submitAnswer() {
     if (!selectedAnswerId || userAnswers[qIndex] !== undefined) return;
     userAnswers[qIndex] = selectedAnswerId;
     const isCorrect = highlightAnswers(selectedAnswerId, question);
+    recordStudyAnswer(qIndex, isCorrect);
     if (isCorrect) {
         correctStreak += 1;
         bestStreak = Math.max(bestStreak, correctStreak);
@@ -1155,7 +1321,7 @@ function finishTest(failed = false, restoringResult = false) {
     const flawless = correctCount === testOrder.length;
     const hardcoreReset = failed && orderMode === 'campaign' && runDifficulty === 'hardcore';
     let campaignCompleted = false;
-    if (!restoringResult && orderMode === 'campaign' && !failed && !retryingErrors && unansweredCount === 0 && activeRange?.size === 5) {
+    if (!restoringResult && !studyRun && orderMode === 'campaign' && !failed && !retryingErrors && unansweredCount === 0 && activeRange?.size === 5) {
         if (activeRange.start === getCampaignProgress(runDifficulty)) {
             setCampaignProgress(runDifficulty, activeRange.end);
             campaignCompleted = activeRange.end === testData.questions.length;
@@ -1195,7 +1361,15 @@ function finishTest(failed = false, restoringResult = false) {
     scoreStreak.textContent = 'Лучшая серия ×' + bestStreak;
     scoreStreak.toggleAttribute('data-milestone', bestStreak >= streakMilestones[0]);
     scoreFlawless.hidden = !flawless;
-    showNewAchievements(!failed && unansweredCount === 0, flawless, campaignCompleted);
+    const completed = !failed && unansweredCount === 0;
+    const studyResult = recordStudyResult(correctCount, wrongCount, completed, flawless, failed);
+    const studyNote = document.getElementById('result-study-note');
+    studyNote.textContent = studyResult.dailyPerfect ? 'Задание дня выполнено без ошибок.' :
+        studyRun?.kind === 'daily' && !retryingErrors ? 'Задание дня завершено.' :
+        studyRun?.kind === 'review' ? `На повторе верных ответов: ${correctCount} из ${testOrder.length}.` :
+        wrongCount ? `Ошибки сохранены. Их можно повторить в журнале подготовки.` : '';
+    studyNote.hidden = !studyNote.textContent;
+    showNewAchievements(completed && !studyRun, flawless, campaignCompleted, studyResult);
     saveAttempt('result', failed);
 
     // Errors table
@@ -1244,6 +1418,10 @@ btnMenu.addEventListener('click', () => {
 btnResume.addEventListener('click', restoreAttempt);
 
 btnRestart.addEventListener('click', () => {
+    if (studyRun) {
+        initTest(testData, false, null, studyRun);
+        return;
+    }
     const total = testData.questions.length;
     const range = campaignRangeAvailable(activeRange?.start ?? null, activeRange?.end ?? total,
         activeRange?.size ?? total, total) ? activeRange : nextCampaignRange(total);
@@ -1298,8 +1476,8 @@ function renderResultRanges(hardcoreReset = false) {
     const next = document.getElementById('btn-next-range');
     const total = testData.questions.length;
     const campaignNext = orderMode === 'campaign' ? nextCampaignRange(total) : null;
-    section.hidden = !activeRange;
-    if (!activeRange) return;
+    section.hidden = Boolean(studyRun) || !activeRange;
+    if (section.hidden) return;
     const blockStart = hardcoreReset ? 0 : Math.floor(activeRange.start / 100) * 100;
     const blockEnd = Math.min(blockStart + 100, total);
     section.setAttribute('aria-label', `Диапазоны блока ${blockStart + 1}–${blockEnd}`);

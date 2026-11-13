@@ -19,7 +19,7 @@
     <script src="https://cdn.jsdelivr.net/npm/katex@0.16.8/dist/katex.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/katex@0.16.8/dist/contrib/auto-render.min.js"></script>
 
-    <link rel="stylesheet" href="styles.css?v=campaign-medals">
+    <link rel="stylesheet" href="styles.css?v=study-desk">
 </head>
 
 <body>
@@ -34,6 +34,11 @@
 
     <div class="app-container">
         <div class="app-toolbar">
+            <button type="button" class="range-button" id="btn-study" title="Журнал подготовки" aria-label="Журнал подготовки">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+                    <path d="M4 4h6l2 2 2-2h6v15h-6l-2 2-2-2H4zM12 6v15M7 8h2m-2 4h2m6-4h2m-2 4h2" />
+                </svg>
+            </button>
             <button type="button" class="range-button" id="btn-achievements" title="Достижения" aria-label="Достижения">
                 <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
                     <path d="M7 3h10v7a5 5 0 0 1-10 0zM7 5H3v2a4 4 0 0 0 4 4m10-6h4v2a4 4 0 0 1-4 4m-5 4v5m-5 1h10" />
@@ -164,6 +169,7 @@
             <div class="result-header">
                 <h1 class="result-title">Результаты</h1>
             </div>
+            <p class="result-note" id="result-study-note" hidden></p>
 
             <div class="result-score">
                 <div class="score-meter" id="score-meter">
@@ -241,8 +247,36 @@
         <ul id="locked-achievement-list"></ul>
     </dialog>
 
+    <dialog class="achievement-panel achievement-dialog study-dialog" id="study-dialog" aria-labelledby="study-title">
+        <form method="dialog" class="achievement-titlebar">
+            <h2 class="achievement-heading" id="study-title">Журнал подготовки</h2>
+            <button class="range-button" aria-label="Закрыть">×</button>
+        </form>
+        <div class="study-dashboard">
+            <section class="study-card">
+                <h3>Повтор ошибок</h3>
+                <p id="study-review-note"></p>
+                <div class="study-actions">
+                    <button type="button" class="range-button" id="btn-study-review">Повторить до 10</button>
+                    <button type="button" class="range-button" id="btn-study-review-all">Повторить все</button>
+                </div>
+            </section>
+            <section class="study-card">
+                <h3>Задание дня</h3>
+                <p id="study-daily-note"></p>
+                <button type="button" class="range-button" id="btn-study-daily">Начать задание</button>
+            </section>
+        </div>
+        <section class="study-history">
+            <h3>Последние попытки</h3>
+            <p id="study-history-summary" hidden></p>
+            <p id="study-history-empty">Здесь появятся результаты после первого теста.</p>
+            <ol id="study-history-list"></ol>
+        </section>
+    </dialog>
+
     <script src="test_data.js"></script>
-    <script src="app.js?v=campaign-medals"></script>
+    <script src="app.js?v=study-desk"></script>
 </body>
 
 </html>

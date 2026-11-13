@@ -2667,3 +2667,74 @@ button.achievement-card:active { box-shadow: inset 2px 2px 0 rgb(0 0 0 / 28%); }
         animation: campaign-shimmer 3s ease-in-out infinite;
     }
 }
+
+/* A small Macintosh notebook beside the test controls. */
+.study-dialog { width: min(470px, calc(100% - 24px)); }
+.study-dashboard {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 177px), 1fr));
+    gap: 8px;
+    margin-top: 8px;
+}
+
+.study-card, .study-history {
+    padding: 8px;
+    border: 1px solid #555;
+    background: #f3f3f3;
+}
+
+.study-card h3, .study-history h3 { font-size: 0.84rem; }
+.study-card p, .study-history p { margin: 4px 0 7px; font-size: 0.74rem; color: #444; }
+.study-actions { display: flex; flex-wrap: wrap; gap: 5px; }
+.study-card button { padding: 4px 7px; font-size: 0.73rem; }
+.study-card button:disabled { opacity: 0.5; cursor: default; }
+
+.study-history { margin-top: 8px; }
+.study-history ol { display: grid; gap: 4px; margin-top: 5px; list-style: none; }
+.study-history li {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 2px 8px;
+    padding: 4px 6px;
+    border: 1px solid #bbb;
+    background: #fff;
+    font-size: 0.74rem;
+}
+.study-history li[data-failed="true"] { border-left: 3px solid #a74643; }
+.study-history li span { font-variant-numeric: tabular-nums; }
+
+.result-note {
+    padding: 5px 8px;
+    border: 1px solid #444;
+    background: #edf3ea;
+    color: #253e2c;
+    font-size: 0.76rem;
+}
+
+#test-screen[data-training] .progress-pill { border-style: dashed; }
+body[data-service-mode] .bg-gradient {
+    background: repeating-conic-gradient(#b9c9b6 0% 25%, #d5decf 0% 50%) 0 0 / 4px 4px;
+}
+body[data-service-mode] .welcome-titlebar .logo-text::after {
+    content: ' ◆';
+    color: #365d48;
+    font-size: 0.66em;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+    .study-dialog[open] { animation: mac-screen-fade 170ms ease-out; }
+    .study-history li { animation: mac-screen-fade 160ms ease-out; }
+}
+
+.study-history progress {
+    appearance: none;
+    flex: 1 0 100%;
+    height: 5px;
+    border: 1px solid #888;
+    background: #eee;
+}
+.study-history progress::-webkit-progress-bar { background: #eee; }
+.study-history progress::-webkit-progress-value { background: #4d805a; }
+.study-history progress::-moz-progress-bar { background: #4d805a; }
