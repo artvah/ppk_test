@@ -16,6 +16,7 @@ let orderMode = 'random';
 let retryingErrors = false;
 let studyRun = null;
 let attemptId = null;
+let lastAttempt = null;
 let health = 0;
 let correctStreak = 0;
 let bestStreak = 0;
@@ -39,8 +40,12 @@ const btnQuestionOrder = document.getElementById('btn-question-order');
 const difficultyMenu = document.getElementById('difficulty-menu');
 const difficultyLabel = document.getElementById('difficulty-label');
 const difficultyOptions = difficultyMenu.querySelectorAll('[data-difficulty]');
+const difficultyNames = Object.fromEntries(Array.from(difficultyOptions, option => [option.dataset.difficulty, option.textContent]));
 const difficultyHint = document.getElementById('difficulty-hint');
 const failureNotice = document.getElementById('run-failure');
+const failureTitle = document.getElementById('failure-title');
+const btnSound = document.getElementById('btn-sound');
+const btnRetroFont = document.getElementById('btn-retro-font');
 
 const progressText = document.getElementById('progress-text');
 const healthBar = document.getElementById('health-bar');
@@ -54,6 +59,8 @@ const answersContainer = document.getElementById('answers-container');
 
 const btnPrev = document.getElementById('btn-prev');
 const btnSubmit = document.getElementById('btn-submit');
+const submitLabel = document.getElementById('submit-label');
+const submitIcon = btnSubmit.querySelector('use');
 const btnNext = document.getElementById('btn-next');
 const btnMenu = document.getElementById('btn-menu');
 const btnAchievements = document.getElementById('btn-achievements');
@@ -63,6 +70,13 @@ const studyDialog = document.getElementById('study-dialog');
 const btnStudyReview = document.getElementById('btn-study-review');
 const btnStudyReviewAll = document.getElementById('btn-study-review-all');
 const btnStudyDaily = document.getElementById('btn-study-daily');
+const studyQueue = document.getElementById('study-queue');
+const studyQueueList = document.getElementById('study-queue-list');
+const btnResultReview = document.getElementById('btn-result-review');
+const btnBookmark = document.getElementById('btn-bookmark');
+const bookmarkQueue = document.getElementById('study-bookmarks');
+const bookmarkList = document.getElementById('study-bookmark-list');
+const btnStudyBookmarks = document.getElementById('btn-study-bookmarks');
 
 const scorePercentage = document.getElementById('score-percentage');
 const scoreDetails = document.getElementById('score-details');
@@ -79,9 +93,85 @@ const btnRestart = document.getElementById('btn-restart');
 
 const achievementStorageKey = 'ppk-test-achievements-v1';
 const sessionStorageKey = 'ppk-test-attempt-v1';
+const menuStorageKey = 'ppk-test-menu-v1';
 const studyStorageKey = 'ppk-test-study-v1';
-const copyableText = '#test-screen .question-text, #test-screen .answer-text-label, #errors-table tbody td';
+const soundStorageKey = 'ppk-test-sound-v1';
+const retroFontStorageKey = 'ppk-test-retro-font';
+const copyableText = '#test-screen .question-text, #test-screen .answer-text-label, #errors-table tbody td, .study-queue-question';
 let questionBankVersion;
+
+let soundEnabled = true;
+let audioContext;
+try { soundEnabled = localStorage.getItem(soundStorageKey) !== 'off'; } catch { /* Optional setting. */ }
+
+function updateSoundButton() {
+    btnSound.setAttribute('aria-pressed', String(soundEnabled));
+    btnSound.title = soundEnabled ? 'Звуки включены' : 'Звуки выключены';
+    btnSound.querySelector('[data-sound-on]').toggleAttribute('hidden', !soundEnabled);
+    btnSound.querySelector('[data-sound-off]').toggleAttribute('hidden', soundEnabled);
+}
+
+function playSound(kind) {
+    if (!soundEnabled) return;
+    const Audio = window.AudioContext || window.webkitAudioContext;
+    if (!Audio) return;
+    try {
+        audioContext ??= new Audio();
+        const sound = {
+            confirm: [392, 523], correct: [523, 659, 784], streak: [523, 659, 784, 1047],
+            wrong: [220, 165], failure: [196, 147, 98], tap: [740], badge: [620, 830], trophy: [587, 784, 1047],
+        }[kind];
+        const tap = kind === 'tap';
+        const badge = kind === 'badge' || kind === 'trophy';
+        const notes = () => sound.forEach((frequency, index) => {
+            const note = audioContext.createOscillator();
+            const envelope = audioContext.createGain();
+            const start = audioContext.currentTime + index * 0.055;
+            note.type = 'triangle';
+            note.frequency.value = frequency;
+            if (tap) note.frequency.exponentialRampToValueAtTime(380, start + 0.027);
+            envelope.gain.setValueAtTime(0.001, start);
+            envelope.gain.exponentialRampToValueAtTime(tap ? 0.021 : badge ? 0.034 : 0.07, start + (tap ? 0.004 : 0.012));
+            envelope.gain.exponentialRampToValueAtTime(0.001, start + (tap ? 0.032 : 0.12));
+            note.connect(envelope).connect(audioContext.destination);
+            note.start(start);
+            note.stop(start + (tap ? 0.036 : 0.13));
+        });
+        if (audioContext.state === 'running') notes();
+        else audioContext.resume().then(() => { if (soundEnabled) notes(); }).catch(() => {});
+    } catch {
+        // Keep the controls usable if the device has no audio output.
+    }
+}
+
+if (!window.AudioContext && !window.webkitAudioContext) btnSound.hidden = true;
+updateSoundButton();
+btnSound.addEventListener('click', () => {
+    soundEnabled = !soundEnabled;
+    updateSoundButton();
+    try { localStorage.setItem(soundStorageKey, soundEnabled ? 'on' : 'off'); } catch { /* Optional setting. */ }
+    playSound('tap');
+});
+
+function setRetroFont(enabled) {
+    document.body.toggleAttribute('data-retro-font', enabled);
+    btnRetroFont.setAttribute('aria-pressed', String(enabled));
+    btnRetroFont.title = enabled ? 'Вернуть обычный шрифт' : 'Включить ретро-шрифт';
+    fitWelcomeScreen();
+}
+
+try { setRetroFont(localStorage.getItem(retroFontStorageKey) === 'on'); } catch { /* Optional setting. */ }
+btnRetroFont.addEventListener('click', () => {
+    const enabled = !document.body.hasAttribute('data-retro-font');
+    setRetroFont(enabled);
+    try { localStorage.setItem(retroFontStorageKey, enabled ? 'on' : 'off'); } catch { /* Optional setting. */ }
+});
+
+document.addEventListener('click', event => {
+    const control = event.target.closest?.('button, summary, .answer-card');
+    if (!control || control === btnSound || control.disabled || control.classList.contains('disabled')) return;
+    if (!control.classList.contains('achievement-card')) playSound('tap');
+}, true);
 
 document.addEventListener('copy', event => {
     const selection = window.getSelection();
@@ -89,7 +179,7 @@ document.addEventListener('copy', event => {
     for (let i = 0; i < selection.rangeCount; i++) {
         const ancestor = selection.getRangeAt(i).commonAncestorContainer;
         const element = ancestor.nodeType === Node.ELEMENT_NODE ? ancestor : ancestor.parentElement;
-        if (!element?.closest(copyableText)) {
+        if (!element?.closest(copyableText) || element.closest('.error-answer-label')) {
             event.preventDefault();
             return;
         }
@@ -98,23 +188,25 @@ document.addEventListener('copy', event => {
 
 function saveAttempt(screen = 'test', failed = false) {
     try {
-        localStorage.setItem(sessionStorageKey, JSON.stringify({
+        lastAttempt = JSON.stringify({
             bank: questionBankVersion, screen, failed, orderMode, difficulty, runDifficulty, activeRange,
             testOrder, currentIndex, answerShuffleMap, userAnswers, selectedAnswerId,
             health, correctStreak, bestStreak, retryingErrors, studyRun, attemptId, unlocks: runUnlocks.map(item => item.id),
-        }));
+        });
+        localStorage.setItem(sessionStorageKey, lastAttempt);
     } catch {
         // The test still works when browser storage is unavailable.
     }
 }
 
-function restoreAttempt() {
-    let saved;
+function readSavedAttempt() {
     try {
-        saved = JSON.parse(localStorage.getItem(sessionStorageKey));
-    } catch {
-        return;
-    }
+        return JSON.parse(lastAttempt ?? localStorage.getItem(sessionStorageKey));
+    } catch { return null; }
+}
+
+function restoreAttempt() {
+    const saved = readSavedAttempt();
     if (!saved || saved.bank !== questionBankVersion || !orderModes.includes(saved.orderMode) ||
         !Array.from(difficultyOptions).some(option => option.dataset.difficulty === saved.runDifficulty)) return;
 
@@ -148,7 +240,7 @@ function restoreAttempt() {
     correctStreak = saved.correctStreak;
     bestStreak = saved.bestStreak;
     retryingErrors = saved.retryingErrors;
-    studyRun = ['review', 'daily'].includes(saved.studyRun?.kind) ? saved.studyRun : null;
+    studyRun = ['review', 'daily', 'bookmarks'].includes(saved.studyRun?.kind) ? saved.studyRun : null;
     attemptId = typeof saved.attemptId === 'string' ? saved.attemptId : null;
     runUnlocks = Array.isArray(saved.unlocks) ? saved.unlocks
         .map(id => achievementCatalog.find(item => item.id === id)).filter(Boolean) : [];
@@ -193,6 +285,9 @@ const achievementCatalog = [
     { id: 'study-daily-perfect', icon: 'flawless', tone: 'hard', title: 'День без помарок',
         description: 'Закончить задание дня без ошибок.',
         study: true, earned: run => run.dailyPerfect },
+    { id: 'study-daily-week', icon: 'streak', tone: 'normal', title: 'Неделя в строю',
+        description: 'Выполнить задание дня семь дней подряд.',
+        study: true, earned: run => run.dailyStreak >= 7 },
     { id: 'study-secret', icon: 'standard', tone: 'normal', title: 'Сервисный режим',
         description: 'Найти спрятанный переключатель в окне TestMaster.', earned: () => false },
     ...Array.from(difficultyOptions, option => ({
@@ -207,12 +302,12 @@ const achievementCatalog = [
 ];
 
 const achievementIcons = {
-    'last-hp': '<rect x="2" y="7" width="19" height="10"/><path d="M21 10h1v4h-1M12 7l-3 5h4l-3 5"/><path d="M5 10v4" stroke-width="2.5"/>',
-    flawless: '<path d="M12 2l3 6 7 1-5 5 1 7-6-3-6 3 1-7-5-5 7-1z"/><path d="m9 12 2 2 4-4"/>',
-    comeback: '<path d="M8 5L3 10l5 5M3 10h12a5 5 0 0 1 0 10h-4"/><path d="M15 10V4h5v6"/>',
-    streak: '<path d="M3 17h4v4H3zm7-5h4v9h-4zm7-6h4v15h-4zM3 12l6-5 4 1 7-6"/>',
-    campaign: '<path d="M4 22V3m1 1h13l-3 4 3 4H5M2 22h7"/><path d="M8 7h1m2 0h1m2 0h1"/>',
-    standard: '<path d="M5 3h14v14H5zM8 7h8M8 10h8m-7 7-2 5 5-2 5 2-2-5"/>',
+    'last-hp': '<path d="M2 7h19v3h2v4h-2v3H2zM12 7l-2 5h4l-2 5"/><path fill="currentColor" stroke="none" d="M4 9h3v6H4z"/>',
+    flawless: '<path d="M12 2l3 6 7 1-5 5 1 7-6-3-6 3 1-7-5-5 7-1z"/><path d="m9 12 2 2 4-4M4 3v4M2 5h4m14 13v4m-2-2h4"/>',
+    comeback: '<path d="M2 13h5l2-6 4 11 3-5h6M3 4h18v16H3z"/>',
+    streak: '<path d="M13 2 5 13h6l-1 9 9-12h-6z"/><path d="M3 6h4M2 9h3m12 9h4m-5 3h3"/>',
+    campaign: '<path d="M3 22h9M6 22V3h14l-4 4 4 4H6M9 6h2m1 3h2"/><path fill="currentColor" stroke="none" d="M3 2h4v3H3z"/>',
+    standard: '<path d="M3 2h13l5 5v15H3zM6 2v7h11V4M6 22V13h12v9m-9-6h6m-6 3h6"/>',
 };
 
 function loadAchievements() {
@@ -231,12 +326,16 @@ let runUnlocks = [];
 function loadStudyData() {
     try {
         const data = JSON.parse(localStorage.getItem(studyStorageKey));
-        if (data && Array.isArray(data.mistakes) && Array.isArray(data.fixed) && Array.isArray(data.history) &&
-            Array.isArray(data.daily)) return data;
+        if (data && Array.isArray(data.mistakes) && Array.isArray(data.fixed) && Array.isArray(data.history) && Array.isArray(data.daily)) {
+            if (!data.records || typeof data.records !== 'object' || Array.isArray(data.records)) data.records = {};
+            if (!Array.isArray(data.dailyPerfect)) data.dailyPerfect = [];
+            if (!Array.isArray(data.bookmarks)) data.bookmarks = [];
+            return data;
+        }
     } catch {
         // Study data is optional when browser storage is unavailable.
     }
-    return { mistakes: [], fixed: [], history: [], daily: [] };
+    return { mistakes: [], fixed: [], daily: [], dailyPerfect: [], history: [], bookmarks: [], records: {} };
 }
 
 const studyData = loadStudyData();
@@ -249,18 +348,105 @@ function saveStudyData() {
     }
 }
 
+function personalRecordKey(mode, difficulty, range, total) {
+    return `${questionBankVersion}:${mode}:${difficulty}:${range?.size ?? total}:${range?.start ?? 0}:${range?.end ?? total}`;
+}
+
+function renderPersonalRecord(correct, completed, restoringResult, hardcoreReset) {
+    const note = document.getElementById('result-record');
+    note.hidden = true;
+    note.removeAttribute('data-improved');
+    if (studyRun || retryingErrors || hardcoreReset) return;
+
+    const total = testData.questions.length;
+    const key = personalRecordKey(orderMode, runDifficulty, activeRange, total);
+    const previous = studyData.records[key];
+    const isNew = completed && !restoringResult && (previous === undefined || correct > previous);
+    if (isNew) studyData.records[key] = correct;
+    const best = isNew ? correct : previous;
+    if (best === undefined) return;
+
+    const score = `${best}/${testOrder.length}`;
+    note.textContent = isNew && previous !== undefined ? `Новый рекорд ${score} · было ${previous}/${testOrder.length}` :
+        isNew ? `Первый результат блока · ${score}` : `Личный рекорд · ${score}`;
+    note.toggleAttribute('data-improved', isNew);
+    note.hidden = false;
+}
+
 function studyQuestionKey(question, index) {
     return question.id == null ? `${questionBankVersion}:${index}` : String(question.id);
 }
 
-function reviewIndexes() {
-    const pending = new Set(studyData.mistakes);
+function reviewIndexes(keys = studyData.mistakes) {
+    const pending = new Set(keys);
     return testData.questions.flatMap((question, index) => pending.has(studyQuestionKey(question, index)) ? [index] : []);
 }
 
-function localStudyDay() {
+function currentStudyKey(questionIndex) {
+    return studyQuestionKey(questions[questionIndex], (activeRange?.start ?? 0) + questionIndex);
+}
+
+function updateBookmarkButton() {
+    const marked = studyData.bookmarks.includes(currentStudyKey(testOrder[currentIndex]));
+    btnBookmark.setAttribute('aria-pressed', String(marked));
+    btnBookmark.title = marked ? 'Убрать закладку' : 'Добавить закладку';
+}
+
+btnBookmark.addEventListener('click', () => {
+    const key = currentStudyKey(testOrder[currentIndex]);
+    if (studyData.bookmarks.includes(key)) studyData.bookmarks = studyData.bookmarks.filter(bookmark => bookmark !== key);
+    else studyData.bookmarks.push(key);
+    saveStudyData();
+    updateBookmarkButton();
+});
+
+function localStudyDay(date = new Date()) {
+    return [date.getFullYear(), date.getMonth() + 1, date.getDate()].map(value => String(value).padStart(2, '0')).join('-');
+}
+
+function dailyStreakEnding(day, completedDays = new Set(studyData.daily)) {
+    const date = new Date(`${day}T12:00:00`);
+    let streak = 0;
+    while (completedDays.has(localStudyDay(date))) {
+        streak += 1;
+        date.setDate(date.getDate() - 1);
+    }
+    return streak;
+}
+
+function renderDailyCalendar() {
     const now = new Date();
-    return [now.getFullYear(), now.getMonth() + 1, now.getDate()].map(value => String(value).padStart(2, '0')).join('-');
+    const completed = new Set(studyData.daily);
+    const perfect = new Set(studyData.dailyPerfect);
+    const calendar = document.getElementById('study-daily-calendar');
+    const date = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 6, 12);
+    let yesterday;
+    const tiles = [];
+    for (let i = 0; i < 7; i++) {
+        const day = localStudyDay(date);
+        const tile = document.createElement('li');
+        const number = document.createElement('time');
+        const mark = document.createElement('span');
+        const status = perfect.has(day) ? 'perfect' : completed.has(day) ? 'done' : 'empty';
+        const statusText = { perfect: 'Без ошибок', done: 'Выполнено', empty: 'Не выполнено' }[status];
+        tile.dataset.status = status;
+        number.dateTime = day;
+        number.textContent = String(date.getDate());
+        number.setAttribute('aria-label', `${date.toLocaleDateString('ru-RU')} · ${statusText}`);
+        tile.title = `${date.toLocaleDateString('ru-RU')} · ${statusText}`;
+        mark.setAttribute('aria-hidden', 'true');
+        mark.textContent = { perfect: '★', done: '✓', empty: '·' }[status];
+        if (i === 5) yesterday = day;
+        if (i === 6) number.setAttribute('aria-current', 'date');
+        tile.append(number, mark);
+        tiles.push(tile);
+        date.setDate(date.getDate() + 1);
+    }
+    calendar.replaceChildren(...tiles);
+    const today = localStudyDay(now);
+    const streak = dailyStreakEnding(completed.has(today) ? today : yesterday, completed);
+    document.getElementById('study-daily-streak').textContent = `Серия подряд: ${streak}`;
+    return completed.has(today);
 }
 
 function dailyIndexes(day) {
@@ -274,20 +460,19 @@ function dailyIndexes(day) {
     return indexes.slice(0, 5);
 }
 
-function startStudy(kind, all = false) {
+function startStudy(kind, limit = Infinity, onlyIndex = null) {
     const day = kind === 'daily' ? localStudyDay() : null;
-    let indexes = kind === 'daily' ? dailyIndexes(day) : reviewIndexes();
-    if (kind === 'review' && !all) indexes = indexes.slice(0, 10);
+    const indexes = kind === 'daily' ? dailyIndexes(day) : reviewIndexes(kind === 'bookmarks' ? studyData.bookmarks : studyData.mistakes)
+        .filter(index => onlyIndex === null || index === onlyIndex).slice(0, limit);
     if (!indexes.length || (kind === 'daily' && studyData.daily.includes(day))) return;
     studyDialog.close();
     initTest(testData, false, null, { kind, day, indexes });
 }
 
 function recordStudyAnswer(questionIndex, correct) {
-    const index = (activeRange?.start ?? 0) + questionIndex;
-    const key = studyQuestionKey(questions[questionIndex], index);
+    const key = currentStudyKey(questionIndex);
     if (!correct && !studyData.mistakes.includes(key)) studyData.mistakes.push(key);
-    if (correct && studyRun?.kind === 'review' && studyData.mistakes.includes(key)) {
+    if (correct && (retryingErrors || studyRun?.kind === 'review') && studyData.mistakes.includes(key)) {
         studyData.mistakes = studyData.mistakes.filter(item => item !== key);
         if (!studyData.fixed.includes(key)) studyData.fixed.push(key);
     }
@@ -298,30 +483,42 @@ function recordStudyResult(correct, errors, completed, flawless, failed) {
     const dailyFinished = studyRun?.kind === 'daily' && !retryingErrors && completed;
     const dailyPerfect = dailyFinished && flawless;
     if (dailyFinished && !studyData.daily.includes(studyRun.day)) {
-        studyData.daily = [...studyData.daily, studyRun.day].slice(-31);
+        studyData.daily.push(studyRun.day);
     }
+    if (dailyPerfect && !studyData.dailyPerfect.includes(studyRun.day)) studyData.dailyPerfect.push(studyRun.day);
+    const dailyStreak = dailyFinished ? dailyStreakEnding(studyRun.day) : 0;
     if (attemptId && !studyData.history.some(entry => entry.id === attemptId)) {
-        studyData.history.unshift({ id: attemptId, time: Date.now(), kind: studyRun?.kind ?? (retryingErrors ? 'retry' : orderMode),
-            difficulty: runDifficulty, correct, errors, total: testOrder.length, failed });
+        const range = !studyRun && !retryingErrors && activeRange ? [activeRange.start + 1, activeRange.end] : null;
+        studyData.history.unshift({ id: attemptId, time: Date.now(), kind: retryingErrors ? 'retry' : (studyRun?.kind ?? orderMode),
+            difficulty: runDifficulty, correct, errors, total: testOrder.length, failed, range });
         studyData.history.length = Math.min(studyData.history.length, 16);
     }
     saveStudyData();
-    return { dailyPerfect, fixed: studyData.fixed.length };
+    return { dailyPerfect, dailyStreak, fixed: studyData.fixed.length };
 }
 
-function showStudyDialog() {
+function showStudyDialog(openQueue = false) {
     if (!testData) return;
     const pending = reviewIndexes().length;
     document.getElementById('study-review-note').textContent = pending
         ? `К повтору: ${pending}. Верный ответ убирает вопрос из списка.` : 'Пока нет вопросов для повтора.';
     btnStudyReview.disabled = btnStudyReviewAll.disabled = pending === 0;
-    const dailyDone = studyData.daily.includes(localStudyDay());
+    studyQueue.hidden = pending === 0;
+    studyQueue.open = pending > 0 && openQueue;
+    studyQueueList.replaceChildren();
+    if (studyQueue.open) renderStudyQueue(studyQueueList, 'review', reviewIndexes());
+    const bookmarks = reviewIndexes(studyData.bookmarks).length;
+    document.getElementById('study-bookmark-note').textContent = bookmarks
+        ? `Отмечено: ${bookmarks}` : 'Нажми на значок закладки рядом с вопросом, чтобы сохранить его.';
+    bookmarkQueue.open = false;
+    bookmarkQueue.hidden = btnStudyBookmarks.hidden = bookmarks === 0;
+    bookmarkList.replaceChildren();
+    const dailyDone = renderDailyCalendar();
     btnStudyDaily.disabled = dailyDone;
     document.getElementById('study-daily-note').textContent = dailyDone
         ? 'На сегодня выполнено. Новый набор появится завтра.' : 'Пять вопросов на сегодня. Без ошибок — отдельная награда.';
     const list = document.getElementById('study-history-list');
-    const names = { daily: 'Задание дня', review: 'Повтор ошибок', retry: 'Работа над ошибками', campaign: 'Кампания', random: 'Случайный порядок', sequential: 'Последовательный порядок' };
-    const difficultyNames = Object.fromEntries(Array.from(difficultyOptions, option => [option.dataset.difficulty, option.textContent]));
+    const names = { daily: 'Задание дня', review: 'Повтор ошибок', bookmarks: 'Закладки', retry: 'Работа над ошибками', campaign: 'Кампания', random: 'Случайный порядок', sequential: 'Последовательный порядок' };
     document.getElementById('study-history-empty').hidden = studyData.history.length > 0;
     const summary = document.getElementById('study-history-summary');
     const answered = studyData.history.reduce((sum, entry) => sum + entry.correct + entry.errors, 0);
@@ -335,9 +532,10 @@ function showStudyDialog() {
         const meter = document.createElement('progress');
         const kind = names[entry.kind] ?? 'Тест';
         const titleDifficulty = difficultyNames[entry.difficulty];
-        title.textContent = titleDifficulty && !['review', 'daily'].includes(entry.kind) ? `${kind} · ${titleDifficulty}` : kind;
+        title.textContent = titleDifficulty && !['review', 'daily', 'bookmarks'].includes(entry.kind) ? `${kind} · ${titleDifficulty}` : kind;
         detail.textContent = `${new Date(entry.time).toLocaleDateString('ru-RU')} · ${entry.correct}/${entry.total}` +
-            (entry.failed ? ' · Провал' : ` · Ошибок: ${entry.errors}`);
+            (entry.failed ? ' · Провал' : ` · Ошибок: ${entry.errors}`) +
+            (entry.range ? ` · Вопросы ${entry.range.join('–')}` : '');
         meter.max = entry.total;
         meter.value = entry.correct;
         meter.setAttribute('aria-hidden', 'true');
@@ -346,11 +544,41 @@ function showStudyDialog() {
         return row;
     }));
     studyDialog.showModal();
+    if (studyQueue.open) studyQueue.querySelector('summary').focus();
 }
 
-btnStudy.addEventListener('click', showStudyDialog);
-btnStudyReview.addEventListener('click', () => startStudy('review'));
-btnStudyReviewAll.addEventListener('click', () => startStudy('review', true));
+function renderStudyQueue(list, kind, indexes) {
+    const rows = document.createDocumentFragment();
+    for (const index of indexes) {
+        const row = document.createElement('li');
+        const question = document.createElement('span');
+        const button = document.createElement('button');
+        question.className = 'study-queue-question';
+        question.textContent = testData.questions[index].question_text;
+        button.type = 'button';
+        button.className = 'range-button';
+        button.textContent = 'Повторить';
+        button.setAttribute('aria-label', `Повторить вопрос ${index + 1}`);
+        button.addEventListener('click', () => startStudy(kind, 1, index));
+        row.append(question, button);
+        rows.appendChild(row);
+    }
+    list.replaceChildren(rows);
+}
+
+studyQueue.addEventListener('toggle', () => {
+    if (studyDialog.open && studyQueue.open && !studyQueueList.children.length) renderStudyQueue(studyQueueList, 'review', reviewIndexes());
+});
+bookmarkQueue.addEventListener('toggle', () => {
+    if (studyDialog.open && bookmarkQueue.open && !bookmarkList.children.length) {
+        renderStudyQueue(bookmarkList, 'bookmarks', reviewIndexes(studyData.bookmarks));
+    }
+});
+btnStudyBookmarks.addEventListener('click', () => startStudy('bookmarks'));
+btnStudy.addEventListener('click', () => showStudyDialog());
+btnResultReview.addEventListener('click', () => showStudyDialog(true));
+btnStudyReview.addEventListener('click', () => startStudy('review', 10));
+btnStudyReviewAll.addEventListener('click', () => startStudy('review'));
 btnStudyDaily.addEventListener('click', () => startStudy('daily'));
 
 let serviceClicks = 0;
@@ -376,6 +604,7 @@ function unlockAchievements(items) {
 }
 
 function celebrateAchievement(button, item) {
+    playSound(item.legendary || item.campaign ? 'trophy' : 'badge');
     if (reducedMotion.matches || button.querySelector('.achievement-sparks')) return;
     const burst = document.createElement('span');
     burst.className = 'achievement-sparks';
@@ -607,6 +836,7 @@ let activeRange = null;
 const campaignKey = 'ppk-test-campaign-v1';
 const campaignProgressByDifficulty = new Map();
 const campaignPerfectByDifficulty = new Map();
+const campaignAttemptsByDifficulty = new Map();
 
 function campaignStorageKey(mode) {
     // The old single track becomes the peaceful track.
@@ -657,6 +887,32 @@ function saveCampaignPerfect(mode, stages) {
         localStorage.setItem(`${campaignStorageKey(mode)}-perfect`, JSON.stringify([...stages]));
     } catch {
         // Keep the ratings in memory if browser storage is disabled.
+    }
+}
+
+function campaignAttempts(mode) {
+    if (!campaignAttemptsByDifficulty.has(mode)) {
+        let entries = [];
+        try {
+            const saved = JSON.parse(localStorage.getItem(`${campaignStorageKey(mode)}-ratings`));
+            if (Array.isArray(saved)) entries = saved.filter(entry => Array.isArray(entry) &&
+                /^(?:\d+:)?\d+:\d+$/.test(entry[0]) && Number.isFinite(entry[1]) && entry[1] >= -1 && entry[1] <= 100);
+        } catch {
+            // Older campaigns have no ratings yet.
+        }
+        campaignAttemptsByDifficulty.set(mode, new Map(entries));
+    }
+    return campaignAttemptsByDifficulty.get(mode);
+}
+
+function rateCampaignRange(range, accuracy) {
+    const ratings = campaignAttempts(runDifficulty);
+    if (range) ratings.set(`${range.size}:${range.start}:${range.end}`, accuracy);
+    else ratings.clear();
+    try {
+        localStorage.setItem(`${campaignStorageKey(runDifficulty)}-ratings`, JSON.stringify([...ratings]));
+    } catch {
+        // Ratings remain visible for this visit.
     }
 }
 
@@ -755,6 +1011,7 @@ function setupRangeButtons(total, resultBlock = null) {
                 const entry = entries[index];
                 button.disabled = !entry;
                 button.toggleAttribute('data-placeholder', !entry);
+                button.removeAttribute('data-next-stage');
                 delete button.dataset.completion;
                 button.removeAttribute('aria-label');
                 if (!entry) {
@@ -763,13 +1020,16 @@ function setupRangeButtons(total, resultBlock = null) {
                     button.onclick = null;
                     return;
                 }
-                const [text, active, action, locked = false, completion] = entry;
+                const [text, active, action, locked = false, completion, nextStage = false] = entry;
                 button.disabled = locked;
                 button.toggleAttribute('data-locked', locked);
+                button.toggleAttribute('data-next-stage', nextStage);
                 button.title = locked ? 'Откроется по мере прохождения' : '';
-                if (completion && !locked) {
+                if (completion && (!locked || completion === 'danger')) {
                     button.dataset.completion = completion;
-                    button.title = { clear: 'Пройдено', perfect: 'Без ошибок', hardcore: 'Пройдено на хардкоре' }[completion];
+                    const status = { clear: 'Пройдено', perfect: 'Без ошибок', hardcore: 'Пройдено на хардкоре',
+                        danger: 'Нужно повторить', caution: 'Есть над чем поработать' }[completion];
+                    button.title = locked ? `${status} · диапазон закрыт` : status;
                     button.setAttribute('aria-label', `${text} · ${button.title}`);
                 }
                 if (button.textContent !== text) button.textContent = text;
@@ -804,10 +1064,22 @@ function setupRangeButtons(total, resultBlock = null) {
     function render() {
         const campaignProgress = campaign ? getCampaignProgress() : 0;
         const perfectStages = campaign ? getCampaignPerfect(difficulty) : null;
-        function completion(start, end) {
-            if (!campaign || end > campaignProgress) return;
-            if (difficulty === 'hardcore') return 'hardcore';
-            return blocks(start, end, 5).every(([stage]) => perfectStages.has(stage)) ? 'perfect' : 'clear';
+        const ratings = campaign ? campaignAttempts(difficulty) : null;
+        function ratingFor(start, end, rangeSize) {
+            return ratings.get(`${rangeSize}:${start}:${end}`) ??
+                (end - start === rangeSize ? ratings.get(`${start}:${end}`) : undefined);
+        }
+        function completion(start, end, rangeSize) {
+            if (!campaign) return;
+            const cleared = end <= campaignProgress;
+            const rating = ratingFor(start, end, rangeSize);
+            if (rating === -1) return 'danger';
+            if (rangeSize === 5 && cleared && perfectStages.has(start)) return 'perfect';
+            if (rating !== undefined) {
+                if (difficulty === 'hardcore') return cleared ? 'hardcore' : 'danger';
+                return rating === 100 ? 'perfect' : rating < 50 ? 'danger' : rating < 70 ? 'caution' : 'clear';
+            }
+            if (rangeSize === 5 && cleared) return difficulty === 'hardcore' ? 'hardcore' : 'clear';
         }
         const shownHundred = hundred ?? 0;
         const shownFifty = fifty ?? shownHundred;
@@ -816,19 +1088,19 @@ function setupRangeButtons(total, resultBlock = null) {
 
         updateHundreds?.([
             ['Все вопросы', hundred === null, () => { hundred = null; fifty = null; part = null; },
-                !campaignRangeAvailable(null, total, total, total), completion(0, total)],
+                !campaignRangeAvailable(null, total, total, total), completion(0, total, total)],
             ...hundreds.map(([start, end]) => [label(start, end), hundred === start, () => {
                 hundred = start;
                 fifty = null;
                 part = null;
-            }, campaign && start > campaignProgress, completion(start, end)]),
+            }, campaign && start > campaignProgress, completion(start, end, 100)]),
         ]);
         updateHalves(blocks(shownHundred, hundredEnd, 50).map(([start, end]) => [
             label(start, end), fifty === start, () => {
                 hundred = shownHundred;
                 fifty = start;
                 part = null;
-            }, campaign && start > campaignProgress, completion(start, end),
+            }, campaign && start > campaignProgress, completion(start, end, 50),
         ]));
         updateSizes(sizes.map(value => ['По ' + value, size === value, () => {
             hundred = shownHundred;
@@ -842,7 +1114,8 @@ function setupRangeButtons(total, resultBlock = null) {
                 hundred = shownHundred;
                 fifty = shownFifty;
                 part = start;
-            }, !campaignRangeAvailable(start, end, size, total), completion(start, end),
+            }, !campaignRangeAvailable(start, end, size, total), completion(start, end, size),
+            campaign && size === 5 && start === campaignProgress,
         ]));
 
         const start = part ?? fifty ?? hundred;
@@ -860,11 +1133,29 @@ function setupRangeButtons(total, resultBlock = null) {
         btnStart.disabled = !available;
         summary.textContent = start === null ? `Выбраны все вопросы: ${total}` :
             `Выбраны вопросы ${label(start, end)} (${end - start})`;
-        if (campaign) summary.textContent = `Пройдено: ${campaignProgress} из ${total} · ` +
-            (available ? (start === null ? 'Все вопросы' : 'Выбрано ' + label(start, end)) : 'Диапазон ещё закрыт');
+        if (campaign) {
+            const next = nextCampaignRange(total);
+            document.getElementById('campaign-route-count').textContent = `Кампания · ${campaignProgress}/${total}`;
+            document.getElementById('campaign-route-next').textContent = next
+                ? `Далее ${label(next.start, next.end)}` : 'Кампания завершена';
+            const meter = document.getElementById('campaign-route-meter');
+            meter.max = total;
+            meter.value = campaignProgress;
+            const rating = ratingFor(start ?? 0, end, start === null ? total : count);
+            const status = !available ? 'закрыт' : rating === -1 ? 'провал' : rating !== undefined
+                ? `последний результат ${Math.round(rating)}%` : 'нет оценки';
+            summary.textContent = `${start === null ? 'Все вопросы' : label(start, end)} · ${status}`;
+        }
+        const range = start === null ? null : { start, end, size: count };
+        const record = studyData.records[personalRecordKey(orderMode, difficulty, range, total)];
+        if (available && record !== undefined) summary.textContent += ` · рекорд ${record}/${end - (start ?? 0)}`;
     }
 
     if (!onResults) document.getElementById('range-selector-container').style.display = total > 5 ? 'flex' : 'none';
+    if (!onResults) {
+        document.getElementById('campaign-legend').hidden = !campaign;
+        document.getElementById('campaign-route').hidden = !campaign;
+    }
     render();
 }
 
@@ -918,12 +1209,13 @@ btnQuestionOrder.addEventListener('click', () => {
     orderMode = orderModes[(orderModes.indexOf(orderMode) + 1) % orderModes.length];
     updateOrderLabel();
     updateDifficultyHint();
+    saveMenuSettings();
     if (testData) setupRangeButtons(testData.questions.length);
 });
 
 function updateOrderLabel() {
     const labels = { random: 'Случайный порядок', sequential: 'Последовательный порядок', campaign: 'Режим прохождения' };
-    btnQuestionOrder.textContent = labels[orderMode];
+    document.getElementById('question-order-label').textContent = labels[orderMode];
     btnQuestionOrder.dataset.mode = orderMode;
 }
 
@@ -931,7 +1223,11 @@ for (const option of difficultyOptions) {
     option.addEventListener('click', () => {
         difficulty = option.dataset.difficulty;
         updateDifficultyMenu();
-        if (testData && orderMode === 'campaign') setupRangeButtons(testData.questions.length);
+        saveMenuSettings();
+        if (testData) {
+            setupRangeButtons(testData.questions.length);
+            fitWelcomeScreen();
+        }
         difficultyMenu.open = false;
         difficultyLabel.focus({ preventScroll: true });
     });
@@ -945,11 +1241,39 @@ function updateDifficultyMenu() {
     updateDifficultyHint();
 }
 
+function saveMenuSettings() {
+    try { localStorage.setItem(menuStorageKey, JSON.stringify({ orderMode, difficulty })); } catch { /* Optional setting. */ }
+}
+
+function updateResumeButton() {
+    const saved = readSavedAttempt();
+    const resumable = saved?.bank === questionBankVersion && saved?.screen === 'test' && !saved.failed &&
+        Array.isArray(saved.testOrder) && Number.isInteger(saved.currentIndex) &&
+        saved.currentIndex >= 0 && saved.currentIndex < saved.testOrder.length;
+    btnResume.hidden = !resumable;
+    if (resumable) btnResume.textContent = `Продолжить · вопрос ${saved.currentIndex + 1}/${saved.testOrder.length}`;
+}
+
+function openSavedMenu() {
+    const saved = readSavedAttempt();
+    let menu;
+    try { menu = JSON.parse(localStorage.getItem(menuStorageKey)); } catch { /* Use the last attempt if available. */ }
+    if (saved?.bank === questionBankVersion && saved.failed && saved.screen === 'test') restoreAttempt();
+    const settings = menu ?? saved;
+    if (orderModes.includes(settings?.orderMode)) orderMode = settings.orderMode;
+    if (Object.hasOwn(difficultyNames, settings?.difficulty)) difficulty = settings.difficulty;
+    updateOrderLabel();
+    updateDifficultyMenu();
+    updateResumeButton();
+    showScreen(welcomeScreen);
+}
+
 document.addEventListener('click', event => {
     if (difficultyMenu.open && !difficultyMenu.contains(event.target)) difficultyMenu.open = false;
 });
 
 function updateDifficultyHint() {
+    document.body.dataset.difficulty = difficulty;
     document.body.toggleAttribute('data-hardcore', difficulty === 'hardcore');
     const limit = difficultyLimits[difficulty];
     difficultyHint.textContent = limit ? `Провал при ${limit}% ошибок` : 'Без досрочного завершения';
@@ -964,6 +1288,7 @@ document.addEventListener('keydown', event => {
 });
 
 function errorLimit() {
+    if (retryingErrors) return Infinity;
     if (runDifficulty === 'hardcore') return 2;
     const percent = difficultyLimits[runDifficulty];
     return percent ? Math.ceil(testOrder.length * percent / 100) : Infinity;
@@ -1042,14 +1367,16 @@ function initTest(data, onlyErrors = false, range, training = null) {
 //  SCREEN SWITCHING
 // ==========================================================
 function showScreen(screen) {
-    document.body.toggleAttribute('data-hardcore', (screen === welcomeScreen ? difficulty : runDifficulty) === 'hardcore');
+    const theme = screen === welcomeScreen ? difficulty : runDifficulty;
+    document.body.dataset.difficulty = theme;
+    document.body.toggleAttribute('data-hardcore', theme === 'hardcore');
     difficultyMenu.open = false;
     clearTimeout(failureTimer);
     failureTimer = null;
     failureNotice.hidden = true;
     [welcomeScreen, testScreen, resultScreen].forEach(s => s.classList.remove('active'));
     screen.classList.add('active');
-    if (screen === welcomeScreen && orderMode === 'campaign') setupRangeButtons(testData.questions.length);
+    if (screen === welcomeScreen && testData) setupRangeButtons(testData.questions.length);
     btnMenu.hidden = screen === welcomeScreen;
     btnAchievements.hidden = screen === testScreen;
     btnStudy.hidden = screen === testScreen;
@@ -1061,9 +1388,10 @@ function showScreen(screen) {
 // ==========================================================
 //  RENDER QUESTION
 // ==========================================================
-function renderQuestion(draftAnswer = null) {
+function renderQuestion(draftAnswer = null, direction = 0) {
     const qIndex = testOrder[currentIndex];
     const question = questions[qIndex];
+    updateBookmarkButton();
 
     answersContainer.innerHTML = '';
     questionImages.innerHTML = '';
@@ -1073,7 +1401,8 @@ function renderQuestion(draftAnswer = null) {
     answerReaction.hidden = true;
     answerReaction.textContent = '';
     delete answerReaction.dataset.milestone;
-    btnSubmit.textContent = 'Ответить';
+    submitLabel.textContent = 'Ответить';
+    submitIcon.setAttribute('href', '#quiz-icon-check');
     delete btnSubmit.dataset.outcome;
     btnNext.disabled = true;
     btnNext.hidden = currentIndex === testOrder.length - 1;
@@ -1099,11 +1428,14 @@ function renderQuestion(draftAnswer = null) {
     const hasAnswered = userAnswers[qIndex] !== undefined;
     const shuffled = answerShuffleMap[qIndex];
 
-    shuffled.forEach(ansIdx => {
+    shuffled.forEach((ansIdx, position) => {
         const answer = question.answers[ansIdx];
         const card = document.createElement('div');
         card.className = 'answer-card';
-        card.tabIndex = 0;
+        card.tabIndex = hasAnswered ? -1 : 0;
+        card.setAttribute('role', 'button');
+        card.setAttribute('aria-pressed', String(hasAnswered && userAnswers[qIndex] === answer.id));
+        card.setAttribute('aria-disabled', String(hasAnswered));
         card.dataset.answerId = answer.id;
 
         let imagesHtml = '';
@@ -1119,7 +1451,10 @@ function renderQuestion(draftAnswer = null) {
 
         card.innerHTML = `
             <div class="answer-content">
-                <div class="custom-radio"><div class="custom-radio-inner"></div></div>
+                <span class="answer-key" aria-hidden="true">
+                    <span>${position + 1}</span>
+                    <svg width="13" height="13" viewBox="0 0 16 16"><use /></svg>
+                </span>
                 <div class="answer-text-label">${parsedAnsText}</div>
             </div>
             ${imagesHtml}
@@ -1166,6 +1501,7 @@ function renderQuestion(draftAnswer = null) {
             .find(card => card.dataset.answerId === String(draftAnswer));
         if (draft) {
             draft.classList.add('selected');
+            draft.setAttribute('aria-pressed', 'true');
             selectedAnswerId = draftAnswer;
             btnSubmit.disabled = false;
         }
@@ -1174,10 +1510,12 @@ function renderQuestion(draftAnswer = null) {
 
     testScreen.parentElement.scrollTop = 0;
     testScreen.focus({ preventScroll: true });
-    if (!reducedMotion.matches) {
-        for (const panel of [questionText.parentElement, answersContainer]) {
-            panel.animate([{ opacity: 0.58 }, { opacity: 1 }], { duration: 150, easing: 'ease-out' });
-        }
+    for (const panel of [questionText.closest('.question-card'), answersContainer]) {
+        panel.getAnimations().forEach(animation => animation.cancel());
+        if (!reducedMotion.matches) panel.animate([
+            { opacity: 0.79, translate: `${direction * 5}px 0` },
+            { opacity: 1, translate: '0 0' },
+        ], { duration: 145, easing: 'cubic-bezier(.2,.7,.25,1)' });
     }
 }
 
@@ -1189,8 +1527,10 @@ function selectAnswer(cardEl, answerId) {
     const selection = window.getSelection();
     if (selection && !selection.isCollapsed && cardEl.contains(selection.anchorNode)) return;
 
-    answersContainer.querySelectorAll('.answer-card').forEach(c => c.classList.remove('selected'));
-    cardEl.classList.add('selected');
+    answersContainer.querySelectorAll('.answer-card').forEach(card => {
+        card.classList.toggle('selected', card === cardEl);
+        card.setAttribute('aria-pressed', String(card === cardEl));
+    });
 
     selectedAnswerId = answerId;
     btnSubmit.disabled = false;
@@ -1204,7 +1544,7 @@ function submitAnswer() {
     if (failureTimer !== null) return;
     const qIndex = testOrder[currentIndex];
     const question = questions[qIndex];
-    if (!selectedAnswerId || userAnswers[qIndex] !== undefined) return;
+    if (selectedAnswerId === null || userAnswers[qIndex] !== undefined) return;
     userAnswers[qIndex] = selectedAnswerId;
     const isCorrect = highlightAnswers(selectedAnswerId, question);
     recordStudyAnswer(qIndex, isCorrect);
@@ -1222,15 +1562,28 @@ function submitAnswer() {
     }
     answerReaction.hidden = false;
     testScreen.dataset.reaction = isCorrect ? 'reward' : 'loss';
-    if (!isCorrect && testOrder.length - health >= errorLimit()) failRun();
-    else saveAttempt();
+    if (!isCorrect && testOrder.length - health >= errorLimit()) {
+        playSound('failure');
+        failRun();
+    } else {
+        playSound(isCorrect ? (streakMilestones.includes(correctStreak) ? 'streak' : 'correct') : 'wrong');
+        saveAttempt();
+    }
 }
 
 function failRun() {
-    if (orderMode === 'campaign' && runDifficulty === 'hardcore') {
+    const reset = orderMode === 'campaign' && runDifficulty === 'hardcore';
+    if (reset) {
         setCampaignProgress(runDifficulty, 0);
         saveCampaignPerfect(runDifficulty, new Set());
+        rateCampaignRange(null);
+        const recordPrefix = `${questionBankVersion}:campaign:hardcore:`;
+        for (const key of Object.keys(studyData.records)) {
+            if (key.startsWith(recordPrefix)) delete studyData.records[key];
+        }
+        saveStudyData();
     }
+    failureTitle.textContent = reset ? 'Хардкор · кампания сброшена' : 'Лимит ошибок исчерпан';
     saveAttempt('test', true);
     failureNotice.hidden = false;
     btnNext.disabled = true;
@@ -1246,10 +1599,14 @@ function updateHealth() {
     const fraction = health / testOrder.length;
     healthBar.dataset.level = fraction <= 0.25 ? 'low' : fraction <= 0.5 ? 'medium' : 'high';
     healthText.textContent = 'HP ' + health + '/' + testOrder.length;
-    hardcoreIndicator.hidden = runDifficulty !== 'hardcore';
     const mistakes = testOrder.length - health;
-    hardcoreIndicator.textContent = mistakes === 0 ? 'ХАРДКОР · 1 шанс' : 'ХАРДКОР · 0 шансов';
-    hardcoreIndicator.toggleAttribute('data-last-chance', mistakes > 0);
+    const limit = errorLimit();
+    const remaining = Math.max(0, limit - mistakes - 1);
+    hardcoreIndicator.hidden = !Number.isFinite(limit);
+    hardcoreIndicator.textContent = remaining ? `Запас: ${remaining}` : mistakes >= limit ? 'Лимит исчерпан' : 'На грани';
+    hardcoreIndicator.setAttribute('aria-label', remaining ? `Допустимо ещё ошибок: ${remaining}` : hardcoreIndicator.textContent);
+    hardcoreIndicator.dataset.remaining = String(remaining);
+    hardcoreIndicator.toggleAttribute('data-last-chance', remaining === 0);
 }
 
 // ==========================================================
@@ -1262,16 +1619,22 @@ function highlightAnswers(selectedId, question) {
 
     cards.forEach(card => {
         card.classList.add('disabled');
+        card.tabIndex = -1;
+        card.setAttribute('aria-disabled', 'true');
         card.style.pointerEvents = 'none';
         const aid = card.dataset.answerId;
-        if (aid === correct?.id) card.classList.add('correct');
-        else if (aid === selectedId && !isCorrect) card.classList.add('wrong');
+        const outcome = aid === String(correct?.id) ? 'correct' : aid === String(selectedId) && !isCorrect ? 'wrong' : null;
+        if (outcome) {
+            card.classList.add(outcome);
+            card.querySelector('.answer-key use').setAttribute('href', outcome === 'correct' ? '#quiz-icon-check' : '#quiz-icon-cross');
+        }
     });
 
     testScreen.dataset.answerState = isCorrect ? 'correct' : 'wrong';
 
     btnSubmit.dataset.outcome = isCorrect ? 'correct' : 'wrong';
-    btnSubmit.textContent = btnNext.hidden ? 'Результаты' : 'Далее';
+    submitLabel.textContent = btnNext.hidden ? 'Результаты' : 'Далее';
+    submitIcon.setAttribute('href', btnNext.hidden ? '#quiz-icon-results' : '#quiz-icon-next');
     btnSubmit.disabled = false;
     btnNext.disabled = false;
     return isCorrect;
@@ -1281,19 +1644,24 @@ function highlightAnswers(selectedId, question) {
 //  NAVIGATION
 // ==========================================================
 function nextQuestion() {
-    if (currentIndex < testOrder.length - 1) { currentIndex++; renderQuestion(); }
+    if (failureTimer !== null || userAnswers[testOrder[currentIndex]] === undefined) return;
+    if (currentIndex < testOrder.length - 1) { currentIndex++; renderQuestion(null, 1); }
     else finishTest();
 }
 
 function prevQuestion() {
-    if (currentIndex > 0) { currentIndex--; renderQuestion(); }
+    if (failureTimer !== null) return;
+    if (currentIndex > 0) { currentIndex--; renderQuestion(null, -1); }
 }
 
 // ==========================================================
 //  FINISH TEST
 // ==========================================================
+let resultErrors = [];
+
 function finishTest(failed = false, restoringResult = false) {
     showScreen(resultScreen);
+    document.getElementById('result-title').focus({ preventScroll: true });
 
     let correctCount = 0;
     let unansweredCount = 0;
@@ -1320,6 +1688,16 @@ function finishTest(failed = false, restoringResult = false) {
     const wrongCount = errors.length;
     const flawless = correctCount === testOrder.length;
     const hardcoreReset = failed && orderMode === 'campaign' && runDifficulty === 'hardcore';
+    const modeName = retryingErrors ? 'Работа над ошибками' : studyRun?.kind === 'daily' ? 'Задание дня' :
+        studyRun?.kind === 'review' ? 'Повтор ошибок' : studyRun?.kind === 'bookmarks' ? 'Закладки' :
+        orderMode === 'campaign' ? 'Кампания' : difficultyNames[runDifficulty];
+    const resultScope = activeRange && !retryingErrors ? `${activeRange.start + 1}–${activeRange.end}` :
+        `${testOrder.length} в попытке`;
+    document.getElementById('result-context').textContent = `${modeName} · ${resultScope}`;
+    if (!restoringResult && !studyRun && orderMode === 'campaign' && !retryingErrors) {
+        const total = testData.questions.length;
+        rateCampaignRange(activeRange ?? { start: 0, end: total, size: total }, failed ? -1 : accuracy);
+    }
     let campaignCompleted = false;
     if (!restoringResult && !studyRun && orderMode === 'campaign' && !failed && !retryingErrors && unansweredCount === 0 && activeRange?.size === 5) {
         if (activeRange.start === getCampaignProgress(runDifficulty)) {
@@ -1335,6 +1713,7 @@ function finishTest(failed = false, restoringResult = false) {
     renderResultRanges(hardcoreReset);
 
     scoreMeter.dataset.tier = flawless ? 'flawless' : accuracy >= 80 ? 'high' : 'standard';
+    resultScreen.dataset.verdict = failed ? 'failed' : flawless ? 'flawless' : accuracy >= 70 ? 'clear' : accuracy >= 50 ? 'caution' : 'danger';
     scoreMeterFill.style.setProperty('--score-width', `${accuracy}%`);
 
     let grade = 'Отлично! Так держать!', color = 'var(--green)';
@@ -1353,6 +1732,13 @@ function finishTest(failed = false, restoringResult = false) {
     scorePercentage.textContent = `${displayAccuracy}%`;
     scoreDetails.textContent = `Правильно: ${correctCount} из ${testOrder.length} · Ошибок: ${wrongCount}` +
         (unansweredCount ? ` · Без ответа: ${unansweredCount}` : '');
+    const breakdown = document.getElementById('result-breakdown');
+    for (const [name, amount] of [['correct', correctCount], ['wrong', wrongCount], ['skip', unansweredCount]]) {
+        const segment = breakdown.querySelector(`[data-stat="${name}"]`);
+        segment.style.flexGrow = String(amount);
+        segment.hidden = amount === 0;
+    }
+    document.getElementById('errors-count').textContent = String(wrongCount);
     gradeText.textContent = grade;
     gradeText.style.color = color;
     scoreMeter.style.setProperty('--score-color', color);
@@ -1362,41 +1748,48 @@ function finishTest(failed = false, restoringResult = false) {
     scoreStreak.toggleAttribute('data-milestone', bestStreak >= streakMilestones[0]);
     scoreFlawless.hidden = !flawless;
     const completed = !failed && unansweredCount === 0;
+    renderPersonalRecord(correctCount, completed, restoringResult, hardcoreReset);
     const studyResult = recordStudyResult(correctCount, wrongCount, completed, flawless, failed);
     const studyNote = document.getElementById('result-study-note');
     studyNote.textContent = studyResult.dailyPerfect ? 'Задание дня выполнено без ошибок.' :
         studyRun?.kind === 'daily' && !retryingErrors ? 'Задание дня завершено.' :
-        studyRun?.kind === 'review' ? `На повторе верных ответов: ${correctCount} из ${testOrder.length}.` :
-        wrongCount ? `Ошибки сохранены. Их можно повторить в журнале подготовки.` : '';
+        studyRun?.kind === 'review' && !retryingErrors ? `На повторе верных ответов: ${correctCount} из ${testOrder.length}.` : '';
+    if (studyResult.dailyStreak > 1) studyNote.textContent += ` Серия подряд: ${studyResult.dailyStreak}.`;
     studyNote.hidden = !studyNote.textContent;
+    const pendingReview = reviewIndexes().length;
+    btnResultReview.textContent = `К повтору в журнале: ${pendingReview}`;
+    btnResultReview.hidden = pendingReview === 0;
     showNewAchievements(completed && !studyRun, flawless, campaignCompleted, studyResult);
     saveAttempt('result', failed);
 
-    // Errors table
+    resultErrors = errors;
     errorsSection.open = false;
     errorsSection.hidden = errors.length === 0;
-    errorsTableBody.innerHTML = '';
-    if (errors.length > 0) {
-        errors.forEach(e => {
-            const row = document.createElement('tr');
-            row.innerHTML = `<td>${renderMarkdownWithMath(e.questionText)}</td><td>${renderMarkdownWithMathInline(e.userAnswer)}</td><td>${renderMarkdownWithMathInline(e.correctAnswer)}</td>`;
-            if (window.renderMathInElement) {
-                renderMathInElement(row, {
-                    delimiters: [
-                        {left: "$$", right: "$$", display: true},
-                        {left: "$", right: "$", display: false}
-                    ],
-                    throwOnError: false,
-                    strict: false
-                });
-            }
-            errorsTableBody.appendChild(row);
-        });
-        btnRetryErrors.style.display = 'flex';
-    } else {
-        btnRetryErrors.style.display = 'none';
-    }
+    errorsTableBody.replaceChildren();
+    btnRetryErrors.hidden = errors.length === 0;
 }
+
+errorsSection.addEventListener('toggle', () => {
+    if (!errorsSection.open || errorsTableBody.rows.length) return;
+    const rows = document.createDocumentFragment();
+    for (const error of resultErrors) {
+        const row = document.createElement('tr');
+        row.setAttribute('role', 'row');
+        row.innerHTML = `<td role="cell">${renderMarkdownWithMath(error.questionText)}</td>` +
+            `<td role="cell"><span class="error-answer-label" aria-hidden="true">Твой ответ</span>${renderMarkdownWithMathInline(error.userAnswer)}</td>` +
+            `<td role="cell"><span class="error-answer-label" aria-hidden="true">Верный ответ</span>${renderMarkdownWithMathInline(error.correctAnswer)}</td>`;
+        rows.appendChild(row);
+    }
+    errorsTableBody.appendChild(rows);
+    window.renderMathInElement?.(errorsTableBody, {
+        delimiters: [
+            {left: '$$', right: '$$', display: true},
+            {left: '$', right: '$', display: false},
+        ],
+        throwOnError: false,
+        strict: false,
+    });
+});
 
 // ==========================================================
 //  BUTTON LISTENERS
@@ -1412,10 +1805,15 @@ failureNotice.addEventListener('click', () => {
 });
 
 btnMenu.addEventListener('click', () => {
-    btnResume.hidden = !testScreen.classList.contains('active') || failureTimer !== null;
+    if (failureTimer !== null) finishTest(true);
+    saveMenuSettings();
+    updateResumeButton();
     showScreen(welcomeScreen);
 });
-btnResume.addEventListener('click', restoreAttempt);
+btnResume.addEventListener('click', () => {
+    restoreAttempt();
+    if (testScreen.classList.contains('active')) saveMenuSettings();
+});
 
 btnRestart.addEventListener('click', () => {
     if (studyRun) {
@@ -1444,11 +1842,23 @@ document.addEventListener('keydown', (e) => {
     const qIndex = testOrder[currentIndex];
     const hasAnswered = userAnswers[qIndex] !== undefined;
 
+    const focusedAnswer = e.target.closest?.('.answer-card');
     if (key === 'Enter' || key === ' ') {
+        if (e.repeat) {
+            e.preventDefault();
+            return;
+        }
         if (e.target.closest?.('button')) return;
         e.preventDefault();
-        if (hasAnswered) nextQuestion();
+        if (!hasAnswered && focusedAnswer && !focusedAnswer.classList.contains('selected')) focusedAnswer.click();
+        else if (hasAnswered) nextQuestion();
         else submitAnswer();
+    } else if (/^[1-9]$/.test(key) && !e.ctrlKey && !e.altKey && !e.metaKey && !hasAnswered) {
+        const card = answersContainer.children[Number(key) - 1];
+        if (card) {
+            e.preventDefault();
+            card.click();
+        }
     } else if (key === 'ArrowDown' || key === 'ArrowUp') {
         e.preventDefault();
         if (hasAnswered) return;
@@ -1461,8 +1871,8 @@ document.addEventListener('keydown', (e) => {
         if (sel === -1) target = key === 'ArrowDown' ? 0 : cards.length - 1;
         else target = key === 'ArrowDown' ? (sel + 1) % cards.length : (sel - 1 + cards.length) % cards.length;
 
-        selectAnswer(cards[target], cards[target].dataset.answerId);
-        cards[target].focus();
+        cards[target].click();
+        cards[target].focus({ preventScroll: true });
     } else if (key === 'ArrowLeft') {
         if (currentIndex > 0) prevQuestion();
     } else if (key === 'ArrowRight') {
@@ -1476,7 +1886,7 @@ function renderResultRanges(hardcoreReset = false) {
     const next = document.getElementById('btn-next-range');
     const total = testData.questions.length;
     const campaignNext = orderMode === 'campaign' ? nextCampaignRange(total) : null;
-    section.hidden = Boolean(studyRun) || !activeRange;
+    section.hidden = Boolean(studyRun) || (!activeRange && !hardcoreReset);
     if (section.hidden) return;
     const blockStart = hardcoreReset ? 0 : Math.floor(activeRange.start / 100) * 100;
     const blockEnd = Math.min(blockStart + 100, total);
@@ -1494,7 +1904,7 @@ function renderResultRanges(hardcoreReset = false) {
     }
 
     const start = activeRange.end;
-    const end = Math.min(start + activeRange.size, blockEnd);
+    const end = Math.min(start + activeRange.size, total);
     next.hidden = start >= end;
     next.textContent = `Далее: вопросы ${start + 1}–${end}`;
     next.onclick = () => initTest(testData, false, { start, end, size: activeRange.size });
@@ -1529,9 +1939,10 @@ function fitWelcomeScreen() {
 
     const app = welcomeScreen.parentElement;
     const viewport = window.visualViewport;
-    const viewportHeight = viewport?.scale === 1 ? viewport.height : app.clientHeight;
+    const viewportBottom = viewport?.scale === 1 ? viewport.offsetTop + viewport.height : document.documentElement.clientHeight;
     const paddingBottom = parseFloat(getComputedStyle(app).paddingBottom);
-    const availableHeight = Math.min(viewportHeight, app.clientHeight) - welcomeScreen.offsetTop - paddingBottom;
+    const bottom = Math.min(viewportBottom, app.getBoundingClientRect().bottom);
+    const availableHeight = bottom - welcomeScreen.getBoundingClientRect().top - paddingBottom;
     const scale = Math.min(1, Math.max(1, availableHeight) / welcomeScreen.offsetHeight);
     welcomeScreen.style.setProperty('--screen-scale', String(scale));
 }
@@ -1555,4 +1966,4 @@ window.visualViewport?.addEventListener('resize', fitWelcomeScreen);
 document.addEventListener('fullscreenchange', fitWelcomeScreen);
 document.addEventListener('fullscreenchange', fitFullscreenQuiz);
 
-testDataReady.then(() => { if (testData) restoreAttempt(); });
+testDataReady.then(() => { if (testData) openSavedMenu(); });
