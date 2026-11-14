@@ -2681,7 +2681,7 @@ button.achievement-card:active { box-shadow: inset 2px 2px 0 rgb(0 0 0 / 28%); }
     border-color: #9b6e1b;
 }
 
-:is(#range-buttons, #result-range-buttons) .range-button[data-completion="hardcore"] {
+:is(#range-buttons, #result-range-buttons) .range-button:is([data-completion="hardcore"], [data-completion="rainbow"]) {
     color: #291b36;
     background: linear-gradient(90deg, #ffbabc, #ffe29e, #c9edab, #b5e8fa, #e7c5ff, #ffbabc);
     background-size: 250% 100%;
@@ -2695,7 +2695,7 @@ button.achievement-card:active { box-shadow: inset 2px 2px 0 rgb(0 0 0 / 28%); }
 }
 
 @media (prefers-reduced-motion: no-preference) {
-    :is(#range-buttons, #result-range-buttons) .range-button[data-completion="hardcore"] {
+    :is(#range-buttons, #result-range-buttons) .range-button:is([data-completion="hardcore"], [data-completion="rainbow"]) {
         animation: campaign-shimmer 3s ease-in-out infinite;
     }
 }
@@ -3044,6 +3044,7 @@ body[data-difficulty] .hardcore-indicator[data-last-chance]:not([hidden]) {
 .campaign-legend [data-medal="caution"]::before { background: #d78d70; }
 .campaign-legend [data-medal="clear"]::before { background: #9cc592; }
 .campaign-legend [data-medal="perfect"]::before { background: linear-gradient(135deg, #a87924, #ffedaa 45%, #c49636); }
+.campaign-legend [data-medal="rainbow"]::before,
 body[data-hardcore] .campaign-legend [data-medal="clear"]::before {
     background: linear-gradient(135deg,#ef8b9d,#ffd165,#abd28d,#85bde3,#ce9ae9);
 }

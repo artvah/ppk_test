@@ -866,6 +866,7 @@ function parseMarkdownTest(mdText) {
 
 let activeRange = null;
 const campaignKey = 'ppk-test-campaign-v1';
+const rangeSelections = new Map();
 const campaignProgressByDifficulty = new Map();
 const campaignPerfectByDifficulty = new Map();
 const campaignAttemptsByDifficulty = new Map();
@@ -966,6 +967,39 @@ function campaignRangeAvailable(start, end, size, total) {
     return campaignProgress >= unlockAt;
 }
 
+function rangeSelectionKey(mode = orderMode, level = difficulty) {
+    return mode === 'campaign' ? `${rangeStorageKey}-campaign-${level}` : rangeStorageKey;
+}
+
+function readRangeSelection() {
+    const key = rangeSelectionKey();
+    if (!rangeSelections.has(key)) {
+        try { rangeSelections.set(key, JSON.parse(localStorage.getItem(key))); }
+        catch { return null; }
+    }
+    return rangeSelections.get(key);
+}
+
+function rememberRangeSelection(selection) {
+    const key = rangeSelectionKey();
+    rangeSelections.set(key, selection);
+    try { localStorage.setItem(key, JSON.stringify(selection)); } catch { /* Keep the menu selection in memory. */ }
+}
+
+function selectionForRange(range) {
+    if (!range) return { hundred: null, fifty: null, size: 5, part: null };
+    const { start, size } = range;
+    const hundred = Math.floor(start / 100) * 100;
+    const fifty = size < 100 ? Math.floor(start / 50) * 50 : null;
+    return { hundred, fifty, size: Math.min(size, 50), part: size < 50 ? start : null };
+}
+
+function selectedRange({ hundred, fifty, size, part }, total) {
+    const start = part ?? fifty ?? hundred;
+    const count = part !== null ? size : fifty !== null ? 50 : 100;
+    return { start, end: start === null ? total : Math.min(start + count, total), size: count };
+}
+
 function setupRangeButtons(total, resultBlock = null) {
     const onResults = resultBlock !== null;
     const host = document.getElementById(onResults ? 'result-range-buttons' : 'range-buttons');
@@ -974,37 +1008,25 @@ function setupRangeButtons(total, resultBlock = null) {
     const sizes = [5, 10, 25, 50];
     const campaign = orderMode === 'campaign';
     const label = (start, end) => `${start + 1}–${end}`;
-    let hundred = resultBlock;
-    let fifty = onResults ? Math.floor(activeRange.start / 50) * 50 : null;
-    let size = onResults ? Math.min(activeRange.size, 50) : 5;
-    let part = onResults && size < 50 ? activeRange.start : null;
-
-    if (campaign && !onResults) {
-        const next = nextCampaignRange(total);
-        if (next) {
-            hundred = Math.floor(next.start / 100) * 100;
-            fifty = Math.floor(next.start / 50) * 50;
-            part = next.start;
-        }
-    } else if (!onResults) {
-        try {
-            const saved = JSON.parse(localStorage.getItem(rangeStorageKey));
-            if (saved && sizes.includes(saved.size)) {
-                size = saved.size;
-                if (Number.isInteger(saved.hundred) && saved.hundred >= 0 &&
-                    saved.hundred < total && saved.hundred % 100 === 0) {
-                    hundred = saved.hundred;
-                    if ((saved.fifty === hundred || saved.fifty === hundred + 50) && saved.fifty < total) {
-                        fifty = saved.fifty;
-                        if (Number.isInteger(saved.part) && saved.part >= fifty &&
-                            saved.part < Math.min(fifty + 50, total) && (saved.part - fifty) % size === 0) {
-                            part = saved.part;
-                        }
-                    }
-                }
+    const saved = readRangeSelection();
+    const previousAttempt = campaign && !saved ? readSavedAttempt() : null;
+    let { hundred, fifty, size, part } = selectionForRange(onResults ? activeRange : campaign ? nextCampaignRange(total) : null);
+    const preferred = saved ?? (previousAttempt?.bank === questionBankVersion && !previousAttempt.failed &&
+        previousAttempt.orderMode === orderMode && previousAttempt.difficulty === difficulty && !previousAttempt.studyRun
+        ? selectionForRange(previousAttempt.activeRange) : null);
+    if (preferred && sizes.includes(preferred.size)) {
+        const validHundred = preferred.hundred === null || (Number.isInteger(preferred.hundred) &&
+            preferred.hundred >= 0 && preferred.hundred < total && preferred.hundred % 100 === 0);
+        const validFifty = preferred.fifty === null || (preferred.hundred !== null &&
+            (preferred.fifty === preferred.hundred || preferred.fifty === preferred.hundred + 50) && preferred.fifty < total);
+        const validPart = preferred.part === null || (preferred.fifty !== null &&
+            Number.isInteger(preferred.part) && preferred.part >= preferred.fifty &&
+            preferred.part < Math.min(preferred.fifty + 50, total) && (preferred.part - preferred.fifty) % preferred.size === 0);
+        if (validHundred && validFifty && validPart && (!onResults || preferred.hundred === resultBlock)) {
+            const range = selectedRange(preferred, total);
+            if (saved || onResults || campaignRangeAvailable(range.start, range.end, range.size, total)) {
+                ({ hundred, fifty, size, part } = preferred);
             }
-        } catch {
-            // The selector still works when storage is unavailable.
         }
     }
 
@@ -1059,6 +1081,7 @@ function setupRangeButtons(total, resultBlock = null) {
                 if (completion && (!locked || completion === 'danger')) {
                     button.dataset.completion = completion;
                     const status = { clear: 'Пройдено', perfect: 'Без ошибок', hardcore: 'Пройдено на хардкоре',
+                        rainbow: 'Весь тест пройден без ошибок',
                         danger: 'Нужно повторить', caution: 'Есть над чем поработать' }[completion];
                     button.title = locked ? `${status} · диапазон закрыт` : status;
                     button.setAttribute('aria-label', `${text} · ${button.title}`);
@@ -1068,13 +1091,7 @@ function setupRangeButtons(total, resultBlock = null) {
                 button.onclick = () => {
                     action();
                     render();
-                    if (!onResults && !campaign) {
-                        try {
-                            localStorage.setItem(rangeStorageKey, JSON.stringify({ hundred, fifty, size, part }));
-                        } catch {
-                            // Keep the selection in memory for this page.
-                        }
-                    }
+                    rememberRangeSelection({ hundred, fifty, size, part });
                 };
             });
         };
@@ -1100,17 +1117,29 @@ function setupRangeButtons(total, resultBlock = null) {
             return ratings.get(`${rangeSize}:${start}:${end}`) ??
                 (end - start === rangeSize ? ratings.get(`${start}:${end}`) : undefined);
         }
-        function completion(start, end, rangeSize) {
+        function completionForRating(rating) {
+            if (rating === undefined) return;
+            if (rating === -1) return 'danger';
+            if (difficulty === 'hardcore') return 'hardcore';
+            return rating === 100 ? 'perfect' : rating < 50 ? 'danger' : rating < 70 ? 'caution' : 'clear';
+        }
+        function completion(start, end, rangeSize, wholeTest = false) {
             if (!campaign) return;
             const cleared = end <= campaignProgress;
             const rating = ratingFor(start, end, rangeSize);
+            if (wholeTest) return rating === 100 ? 'rainbow' : completionForRating(rating);
             if (rating === -1) return 'danger';
             if (rangeSize === 5 && cleared && perfectStages.has(start)) return 'perfect';
-            if (rating !== undefined) {
-                if (difficulty === 'hardcore') return cleared ? 'hardcore' : 'danger';
-                return rating === 100 ? 'perfect' : rating < 50 ? 'danger' : rating < 70 ? 'caution' : 'clear';
-            }
+            if (rating !== undefined) return difficulty === 'hardcore' && !cleared ? 'danger' : completionForRating(rating);
             if (rangeSize === 5 && cleared) return difficulty === 'hardcore' ? 'hardcore' : 'clear';
+        }
+        function sizeCompletion(parts, rangeSize) {
+            if (!campaign) return;
+            const scores = parts.map(([start, end]) => ratingFor(start, end, rangeSize)).filter(score => score !== undefined);
+            if (!scores.length) return;
+            const result = Math.min(...scores);
+            // A perfect size badge means every part of that size was played without mistakes.
+            return completionForRating(result === 100 && scores.length < parts.length ? 99 : result);
         }
         const shownHundred = hundred ?? 0;
         const shownFifty = fifty ?? shownHundred;
@@ -1119,7 +1148,7 @@ function setupRangeButtons(total, resultBlock = null) {
 
         updateHundreds?.([
             ['Все вопросы', hundred === null, () => { hundred = null; fifty = null; part = null; },
-                !campaignRangeAvailable(null, total, total, total), completion(0, total, total)],
+                !campaignRangeAvailable(null, total, total, total), completion(0, total, total, true)],
             ...hundreds.map(([start, end]) => [label(start, end), hundred === start, () => {
                 hundred = start;
                 fifty = null;
@@ -1133,13 +1162,16 @@ function setupRangeButtons(total, resultBlock = null) {
                 part = null;
             }, campaign && start > campaignProgress, completion(start, end, 50),
         ]));
-        updateSizes(sizes.map(value => ['По ' + value, size === value, () => {
-            hundred = shownHundred;
-            fifty = shownFifty;
-            size = value;
-            part = shownFifty;
-        }, campaign && !blocks(shownFifty, fiftyEnd, value).some(([start, end]) =>
-            campaignRangeAvailable(start, end, value, total))]));
+        updateSizes(sizes.map(value => {
+            const parts = blocks(shownFifty, fiftyEnd, value);
+            return ['По ' + value, size === value, () => {
+                hundred = shownHundred;
+                fifty = shownFifty;
+                size = value;
+                part = shownFifty;
+            }, campaign && !parts.some(([start, end]) => campaignRangeAvailable(start, end, value, total)),
+            sizeCompletion(parts, value)];
+        }));
         updateParts(blocks(shownFifty, fiftyEnd, size).map(([start, end]) => [
             label(start, end), part === start, () => {
                 hundred = shownHundred;
@@ -1149,9 +1181,7 @@ function setupRangeButtons(total, resultBlock = null) {
             campaign && size === 5 && start === campaignProgress,
         ]));
 
-        const start = part ?? fifty ?? hundred;
-        const count = part !== null ? size : fifty !== null ? 50 : 100;
-        const end = start === null ? total : Math.min(start + count, total);
+        const { start, end, size: count } = selectedRange({ hundred, fifty, size, part }, total);
         const available = campaignRangeAvailable(start, end, count, total);
         if (startButton) {
             startButton.textContent = 'Начать: ' + label(start, end);
@@ -1324,7 +1354,9 @@ function resetProgress(full) {
     lastAttempt = 'null';
     activeRange = null;
     runUnlocks = [];
-    removeSavedKeys([sessionStorageKey, rangeStorageKey]);
+    rangeSelections.clear();
+    removeSavedKeys([sessionStorageKey, rangeStorageKey,
+        ...Object.keys(difficultyNames).map(level => rangeSelectionKey('campaign', level))]);
     Object.assign(studyData, { mistakes: [], fixed: [], daily: [], dailyPerfect: [], history: [], records: {} });
     if (full) studyData.bookmarks = [];
     saveStudyData();
@@ -1473,6 +1505,12 @@ function initTest(data, onlyErrors = false, range, training = null) {
         const total = data.questions.length;
         if (!campaignRangeAvailable(range?.start ?? null, range?.end ?? total, range?.size ?? total, total)) return;
         activeRange = range ?? null;
+        const savedSelection = readRangeSelection();
+        const selected = savedSelection && selectedRange(savedSelection, total);
+        if (!selected || selected.start !== (activeRange?.start ?? null) ||
+            (activeRange && selected.size !== activeRange.size)) {
+            rememberRangeSelection(selectionForRange(activeRange));
+        }
         questions = activeRange ? data.questions.slice(activeRange.start, activeRange.end) : data.questions;
         const indexes = Array.from({ length: questions.length }, (_, i) => i);
         testOrder = orderMode === 'sequential' ? indexes : shuffleArray(indexes);
@@ -1714,6 +1752,7 @@ function failRun() {
     const reset = orderMode === 'campaign' && runDifficulty === 'hardcore';
     if (reset) {
         setCampaignProgress(runDifficulty, 0);
+        rememberRangeSelection(selectionForRange(nextCampaignRange(testData.questions.length)));
         saveCampaignPerfect(runDifficulty, new Set());
         rateCampaignRange(null);
         const recordPrefix = `${questionBankVersion}:campaign:hardcore:`;
