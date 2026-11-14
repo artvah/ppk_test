@@ -940,8 +940,10 @@ function campaignAttempts(mode) {
 
 function rateCampaignRange(range, accuracy) {
     const ratings = campaignAttempts(runDifficulty);
-    if (range) ratings.set(`${range.size}:${range.start}:${range.end}`, accuracy);
-    else ratings.clear();
+    if (range) {
+        const key = `${range.size}:${range.start}:${range.end}`;
+        ratings.set(key, Math.max(ratings.get(key) ?? -1, accuracy));
+    } else ratings.clear();
     try {
         localStorage.setItem(`${campaignStorageKey(runDifficulty)}-ratings`, JSON.stringify([...ratings]));
     } catch {
@@ -1114,8 +1116,15 @@ function setupRangeButtons(total, resultBlock = null) {
         const perfectStages = campaign ? getCampaignPerfect(difficulty) : null;
         const ratings = campaign ? campaignAttempts(difficulty) : null;
         function ratingFor(start, end, rangeSize) {
-            return ratings.get(`${rangeSize}:${start}:${end}`) ??
-                (end - start === rangeSize ? ratings.get(`${start}:${end}`) : undefined);
+            const range = { start, end, size: rangeSize };
+            const record = studyData.records[personalRecordKey('campaign', difficulty, range, total)];
+            const best = Math.max(
+                ratings.get(`${rangeSize}:${start}:${end}`) ?? -Infinity,
+                (end - start === rangeSize ? ratings.get(`${start}:${end}`) : undefined) ?? -Infinity,
+                Number.isInteger(record) && record >= 0 && record <= end - start ? record / (end - start) * 100 : -Infinity,
+                rangeSize === 5 && end <= campaignProgress && perfectStages.has(start) ? 100 : -Infinity,
+            );
+            return best === -Infinity ? undefined : best;
         }
         function completionForRating(rating) {
             if (rating === undefined) return;
@@ -1129,7 +1138,6 @@ function setupRangeButtons(total, resultBlock = null) {
             const rating = ratingFor(start, end, rangeSize);
             if (wholeTest) return rating === 100 ? 'rainbow' : completionForRating(rating);
             if (rating === -1) return 'danger';
-            if (rangeSize === 5 && cleared && perfectStages.has(start)) return 'perfect';
             if (rating !== undefined) return difficulty === 'hardcore' && !cleared ? 'danger' : completionForRating(rating);
             if (rangeSize === 5 && cleared) return difficulty === 'hardcore' ? 'hardcore' : 'clear';
         }
@@ -1204,7 +1212,7 @@ function setupRangeButtons(total, resultBlock = null) {
             meter.value = campaignProgress;
             const rating = ratingFor(start ?? 0, end, start === null ? total : count);
             const status = !available ? 'закрыт' : rating === -1 ? 'провал' : rating !== undefined
-                ? `последний результат ${Math.round(rating)}%` : 'нет оценки';
+                ? `лучший результат ${Math.round(rating)}%` : 'нет оценки';
             summary.textContent = `${start === null ? 'Все вопросы' : label(start, end)} · ${status}`;
         }
         const range = start === null ? null : { start, end, size: count };
