@@ -1458,7 +1458,7 @@ function initTest(data, onlyErrors = false, range, training = null) {
             if (answerId !== undefined && correct?.id !== answerId) errorIndexes.push(idx);
         });
         if (!errorIndexes.length) return;
-        testOrder = orderMode === 'random' ? shuffleArray(errorIndexes) : errorIndexes.sort((a, b) => a - b);
+        testOrder = orderMode === 'sequential' ? errorIndexes.sort((a, b) => a - b) : shuffleArray(errorIndexes);
         training = studyRun;
     } else if (training) {
         activeRange = null;
@@ -1475,7 +1475,7 @@ function initTest(data, onlyErrors = false, range, training = null) {
         activeRange = range ?? null;
         questions = activeRange ? data.questions.slice(activeRange.start, activeRange.end) : data.questions;
         const indexes = Array.from({ length: questions.length }, (_, i) => i);
-        testOrder = orderMode === 'random' ? shuffleArray(indexes) : indexes;
+        testOrder = orderMode === 'sequential' ? indexes : shuffleArray(indexes);
     }
 
     currentIndex = 0;
